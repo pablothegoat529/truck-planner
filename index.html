@@ -170,7 +170,7 @@
     <div class="card">
       <h2>Start point</h2>
       <div class="row">
-        <div style="flex:2"><input id="startPc" placeholder="Depot postcode, e.g. M17 1RS" autocapitalize="characters" autocomplete="off"></div>
+        <div style="flex:2"><input id="startPc" placeholder="Depot postcode, e.g. SW1A 2AA" autocapitalize="characters" autocomplete="off"></div>
         <div style="flex:1"><button class="btn block" id="useLoc">📍 Here</button></div>
       </div>
       <div class="row">
@@ -272,7 +272,7 @@
       <button class="btn primary" id="saveSettings">Save</button>
     </div>
     <p class="hint" style="margin-top:16px">
-      Postcodes: postcodes.io · Routing: openrouteservice (HGV profile) · Bridges &amp; limits: © OpenStreetMap contributors via Overpass API · Map: © CARTO, © OpenStreetMap.
+      Postcodes: postcodes.io · Routing: openrouteservice (HGV profile) · Bridges &amp; limits: © OpenStreetMap contributors via Overpass API · Map: © OpenStreetMap contributors.
     </p>
   </div>
 </div>
@@ -837,9 +837,9 @@ function ensureMap(){
   if (map) return;
   if (!window.L){ $("map").innerHTML = '<p class="empty">Map couldn\'t load – check your internet connection.</p>'; map={invalidateSize(){},setView(){},getZoom(){return 0}}; return; }
   map = L.map("map", {zoomControl:true}).setView([53.5,-2.2], 6);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-    maxZoom:19, subdomains:"abcd",
-    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom:19,
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
   routeLayer = L.layerGroup().addTo(map); stopLayer = L.layerGroup().addTo(map);
   restrLayer = L.layerGroup().addTo(map); areaLayer = L.layerGroup().addTo(map); meLayer = L.layerGroup().addTo(map);
@@ -1010,7 +1010,7 @@ $("testNet").onclick = async ()=>{
   const lines = [`Page opened from: ${location.protocol==="file:"?"a file on the phone":location.protocol==="content:"?"a file on the phone":location.host||location.protocol}${IN_PREVIEW?" (file or preview – may be blocked from going online)":""}`];
   out.textContent = lines.join("\n") + "\nTesting…";
   const t = async (name, fn)=>{ try{ lines.push(`${await fn()} ${name}`); }catch(e){ lines.push(`❌ ${name}: can't connect`); } out.textContent = lines.join("\n"); };
-  await t("Postcode lookup", async()=>{ const r = await fetch("https://api.postcodes.io/postcodes/M171RS"); return r.ok?"✅":"⚠️ ("+r.status+")"; });
+  await t("Postcode lookup", async()=>{ const r = await fetch("https://api.postcodes.io/postcodes/SW1A2AA"); return (r.ok||r.status===404)?"✅":"⚠️ ("+r.status+")"; });
   await t("Routing (OpenRouteService)", async()=>{
     if (!key) return "⚠️ no key entered –";
     const r = await fetch("https://api.openrouteservice.org/v2/directions/driving-hgv?api_key="+encodeURIComponent(key)+"&start=-2.33,53.47&end=-2.30,53.48");
