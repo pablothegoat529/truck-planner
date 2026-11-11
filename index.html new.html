@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1b2a3a">
+<title>Truck Drop Planner</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+<style>
+  :root{
+    --bg:#f3f4f1; --card:#fff; --ink:#18212b; --muted:#5f6b76; --line:#dde1e4;
+    --brand:#1b2a3a; --accent:#f2b705; --go:#1f7a4d; --warn:#d98200; --stop:#c62828;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);
+       padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+  header{background:var(--brand);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:1000}
+  header h1{font-size:18px;margin:0;flex:1;letter-spacing:.2px}
+  header .veh{font-size:13px;background:rgba(255,255,255,.12);padding:4px 8px;border-radius:8px;white-space:nowrap}
+  .iconbtn{background:none;border:0;color:#fff;font-size:22px;padding:4px 6px;cursor:pointer}
+  main{max-width:720px;margin:0 auto;padding:12px}
+  .tab{display:none}.tab.active{display:block}
+  .card{background:var(--card);border-radius:var(--radius);padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .card h2{font-size:16px;margin:0 0 10px}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  input,select,textarea{width:100%;font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);border-color:transparent}
+  .row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 14px;cursor:pointer;background:#e6e9ec;color:var(--ink)}
+  .btn.primary{background:var(--accent);color:#1b1b1b}
+  .btn.dark{background:var(--brand);color:#fff}
+  .btn.block{width:100%}
+  .btn.small{padding:8px 10px;font-size:14px}
+  .btn:disabled{opacity:.5}
+  .seg{display:flex;background:#e6e9ec;border-radius:10px;padding:3px}
+  .seg button{flex:1;border:0;background:none;padding:8px;border-radius:8px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}
+  .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+  .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+  .banner{border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:12px}
+  .banner.warn{background:#fff4d6;border:1px solid #f0d27a}
+  .banner.info{background:#e8f1fb;border:1px solid #bcd4ee}
+  .banner.bad{background:#fde8e8;border:1px solid #f1b5b5}
+  /* drops list */
+  #dropList{list-style:none;margin:10px 0 0;padding:0}
+  .drop{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:#fff}
+  .drop.sortable-ghost{opacity:.4}
+  .handle{font-size:22px;color:var(--muted);cursor:grab;padding:4px 2px;touch-action:none;user-select:none}
+  .num{flex:0 0 30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+  .drop .body{flex:1;min-width:0}
+  .drop .pc{font-weight:700;letter-spacing:.5px}
+  .drop .pc .bad{color:var(--stop);font-weight:600;font-size:12px;margin-left:6px}
+  .drop input.note{padding:6px 8px;font-size:14px;margin-top:4px}
+  .drop .acts{display:flex;flex-direction:column;gap:4px}
+  .mini{border:0;background:#eef0f2;border-radius:8px;width:34px;height:30px;font-size:16px;cursor:pointer}
+  .mini.del{color:var(--stop)}
+  .empty{color:var(--muted);text-align:center;padding:18px 0;font-size:14px}
+  /* map + results */
+  #map{height:52vh;min-height:320px;border-radius:var(--radius);margin-bottom:12px;z-index:1}
+  .stats{display:flex;gap:8px}
+  .stat{flex:1;background:#f5f6f7;border-radius:10px;padding:8px;text-align:center}
+  .stat b{display:block;font-size:20px}
+  .stat span{font-size:12px;color:var(--muted)}
+  .rlist{list-style:none;padding:0;margin:0}
+  .ritem{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+  .ritem:first-child{border-top:0}
+  .dot{flex:0 0 14px;height:14px;border-radius:50%;margin-top:4px}
+  .dot.block{background:var(--stop)}.dot.tight{background:var(--warn)}.dot.ok{background:var(--go)}
+  .ritem .t{font-weight:600}.ritem .s{font-size:13px;color:var(--muted)}
+  details.leg{border-top:1px solid var(--line);padding:10px 0}
+  details.leg:first-of-type{border-top:0}
+  details.leg summary{cursor:pointer;list-style:none;display:flex;gap:10px;align-items:center}
+  details.leg summary::-webkit-details-marker{display:none}
+  .leg .eta{margin-left:auto;text-align:right;font-size:13px;color:var(--muted);white-space:nowrap}
+  .leg .eta b{color:var(--ink);font-size:15px}
+  .steps{margin:8px 0 0 40px;padding:0;font-size:14px}
+  .steps li{margin:4px 0}
+  .steps .d{color:var(--muted)}
+  /* nav */
+  nav.bottom{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:1000;padding-bottom:env(safe-area-inset-bottom)}
+  nav.bottom button{flex:1;border:0;background:none;padding:10px 4px 12px;font:inherit;font-size:12px;color:var(--muted);cursor:pointer}
+  nav.bottom button .i{display:block;font-size:22px;line-height:1.2}
+  nav.bottom button.on{color:var(--brand);font-weight:700}
+  nav.bottom button.on .i{transform:scale(1.1)}
+  /* overlays */
+  #busy{position:fixed;inset:0;background:rgba(20,28,36,.45);display:none;align-items:center;justify-content:center;z-index:3000}
+  #busy.on{display:flex}
+  #busy div{background:#fff;padding:16px 20px;border-radius:12px;font-weight:600;max-width:80%;text-align:center}
+  #toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1b2a3a;color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;z-index:3001;display:none;max-width:90%;text-align:center}
+  #toast.on{display:block}
+  .modal{position:fixed;inset:0;background:rgba(20,28,36,.5);display:none;align-items:flex-end;justify-content:center;z-index:2500}
+  .modal.on{display:flex}
+  .sheet{background:#fff;width:100%;max-width:720px;border-radius:18px 18px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+  .pin{background:var(--brand);color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .pin.start{background:var(--go)}
+  .rpin{border:2px solid #fff;border-radius:6px;padding:1px 4px;font-size:11px;font-weight:800;color:#fff;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .rpin.block{background:var(--stop)}.rpin.tight{background:var(--warn)}.rpin.ok{background:var(--go);opacity:.75}
+  .ocrrow{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
+  .ocrrow:first-child{border-top:0}
+  .ocrrow input[type=checkbox]{width:22px;height:22px;flex:0 0 22px}
+  .ocrrow input[type=text]{flex:1;font-weight:700;letter-spacing:.5px}
+  .ocrrow .dup{font-size:12px;color:var(--muted);white-space:nowrap}
+  .mapbar{display:flex;gap:8px;margin:-4px 0 12px}
+  a{color:#1559a8}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚚 Truck Drop Planner</h1>
+  <span class="veh" id="vehBadge">No vehicle set</span>
+  <button class="iconbtn" id="openSettings" aria-label="Settings">⚙︎</button>
+</header>
+
+<main>
+  <div class="banner bad" id="previewBanner" style="display:none">
+    <b>This is open as a file or a preview, which often stops it going online.</b> If postcodes, routes or bridges won’t load, that’s why.
+    Open the planner from its web link in Chrome instead.
+  </div>
+  <!-- ============ VEHICLE ============ -->
+  <section class="tab" id="tab-vehicle">
+    <div class="card">
+      <h2>Your vehicle</h2>
+      <label for="preset">Quick fill</label>
+      <select id="preset">
+        <option value="">Choose a typical vehicle…</option>
+        <option value="van">3.5 t van</option>
+        <option value="75">7.5 t box</option>
+        <option value="18">18 t rigid</option>
+        <option value="26">26 t rigid</option>
+        <option value="44">44 t artic</option>
+      </select>
+      <p class="hint">Then change the numbers to match <b>your</b> truck and load. Measure the height including any load on top.</p>
+
+      <label>Height</label>
+      <div class="seg" id="hUnit">
+        <button data-u="ft" class="on">Feet &amp; inches</button>
+        <button data-u="m">Metres</button>
+      </div>
+      <div class="row" id="hFtRow" style="margin-top:8px">
+        <div><label for="hFt">Feet</label><input id="hFt" type="number" inputmode="numeric" min="0" max="20"></div>
+        <div><label for="hIn">Inches</label><input id="hIn" type="number" inputmode="decimal" min="0" max="11.9" step="0.5"></div>
+      </div>
+      <div id="hMRow" style="display:none;margin-top:8px">
+        <label for="hM">Metres</label><input id="hM" type="number" inputmode="decimal" step="0.01" min="0">
+      </div>
+
+      <div class="row">
+        <div><label for="wT">Gross weight (tonnes)</label><input id="wT" type="number" inputmode="decimal" step="0.1" min="0"></div>
+        <div><label for="axT">Axle weight (t) <small>optional</small></label><input id="axT" type="number" inputmode="decimal" step="0.1" min="0"></div>
+      </div>
+      <div class="row">
+        <div><label for="widM">Width (m)</label><input id="widM" type="number" inputmode="decimal" step="0.01" min="0"></div>
+        <div><label for="lenM">Length (m)</label><input id="lenM" type="number" inputmode="decimal" step="0.1" min="0"></div>
+      </div>
+      <div style="margin-top:14px"><button class="btn primary block" id="saveVeh">Save vehicle</button></div>
+      <p class="hint" id="vehSummary"></p>
+    </div>
+  </section>
+
+  <!-- ============ DROPS ============ -->
+  <section class="tab" id="tab-drops">
+    <div class="banner warn" id="keyBanner" style="display:none">
+      Routing needs a free OpenRouteService key. Tap <b>⚙︎</b> at the top to add it (one-time setup).
+    </div>
+
+    <div class="card">
+      <h2>Start point</h2>
+      <div class="row">
+        <div style="flex:2"><input id="startPc" placeholder="Depot postcode, e.g. SW1A 2AA" autocapitalize="characters" autocomplete="off"></div>
+        <div style="flex:1"><button class="btn block" id="useLoc">📍 Here</button></div>
+      </div>
+      <div class="row">
+        <div><label for="depart">Leave at</label><input id="depart" type="time" value="08:00"></div>
+        <div><label for="svc">Mins per drop</label><input id="svc" type="number" inputmode="numeric" min="0" value="15"></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;color:var(--ink);font-size:15px;margin-top:12px">
+        <input type="checkbox" id="rtn" style="width:auto"> Return to start at the end
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Drops <span id="dropCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="row">
+        <div style="flex:2"><input id="newPc" placeholder="Add postcode" autocapitalize="characters" autocomplete="off"></div>
+        <div style="flex:1"><button class="btn dark block" id="addPc">Add</button></div>
+      </div>
+      <details style="margin-top:8px">
+        <summary style="font-size:14px;color:#1559a8;cursor:pointer">Paste a list of postcodes</summary>
+        <textarea id="pasteBox" rows="5" placeholder="One per line (or separated by commas)" style="margin-top:8px" autocapitalize="characters"></textarea>
+        <button class="btn block small" id="addPaste" style="margin-top:6px">Add these</button>
+      </details>
+      <button class="btn block" id="shotBtn" style="margin-top:10px">📷 Add from screenshots</button>
+      <input type="file" id="shotInput" accept="image/*" multiple style="display:none">
+      <p class="hint">Screenshot your job list in any app, then pick the screenshots here. It reads the postcodes for you.</p>
+      <ul id="dropList"></ul>
+      <p class="hint">Drag <b>⠿</b> or use the arrows to put drops in the order you want to do them.</p>
+    </div>
+
+    <div class="card">
+      <button class="btn primary block" id="planBtn">🗺️ Plan truck route in this order</button>
+      <div class="row" style="margin-top:8px">
+        <button class="btn small" id="optBtn">✨ Suggest an order</button>
+        <button class="btn small" id="copyBtn">📋 Copy postcodes</button>
+      </div>
+      <div style="margin-top:8px"><button class="btn small block" id="clearBtn" style="color:var(--stop)">Clear all drops</button></div>
+    </div>
+  </section>
+
+  <!-- ============ ROUTE ============ -->
+  <section class="tab" id="tab-route">
+    <div class="banner bad">
+      <b>Planning aid only.</b> Bridge and weight data comes from OpenStreetMap and can be missing or out of date.
+      Always obey road signs and use a proper truck sat nav to drive.
+    </div>
+    <div class="banner info" id="staleBanner" style="display:none">Your drops or vehicle have changed since this route was planned. Go back to <b>Drops</b> and tap <b>Plan</b> again.</div>
+    <div id="map"></div>
+    <div class="mapbar">
+      <button class="btn small" id="areaBtn" style="flex:1">🔎 Check this map area for low bridges</button>
+      <button class="btn small" id="locBtn">📍</button>
+    </div>
+
+    <div class="card" id="summaryCard" style="display:none">
+      <div class="stats">
+        <div class="stat"><b id="sMiles">–</b><span>miles</span></div>
+        <div class="stat"><b id="sDrive">–</b><span>driving</span></div>
+        <div class="stat"><b id="sFinish">–</b><span>finish (est.)</span></div>
+      </div>
+    </div>
+
+    <div class="card" id="restrCard" style="display:none">
+      <h2>Restrictions on or near your route</h2>
+      <div id="restrStatus" class="hint"></div>
+      <ul class="rlist" id="restrList"></ul>
+    </div>
+
+    <div class="card" id="legsCard" style="display:none">
+      <h2>Drop by drop</h2>
+      <div id="legs"></div>
+    </div>
+
+    <div class="card" id="noRoute">
+      <p class="empty">No route yet. Add your drops, then tap <b>Plan truck route</b>.</p>
+    </div>
+  </section>
+</main>
+
+<nav class="bottom">
+  <button data-tab="vehicle"><span class="i">🚛</span>Vehicle</button>
+  <button data-tab="drops"><span class="i">📦</span>Drops</button>
+  <button data-tab="route"><span class="i">🗺️</span>Route</button>
+</nav>
+
+<div class="modal" id="settings">
+  <div class="sheet">
+    <h2 style="margin-top:0">Settings</h2>
+    <label for="orsKey">OpenRouteService API key</label>
+    <input id="orsKey" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+    <p class="hint">
+      This is what works out a truck-safe route. It's free:
+      sign up at <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">openrouteservice.org</a>,
+      open your dashboard, copy the key (the long string under <i>Tokens</i>) and paste it above.
+      It's only stored on this phone.
+    </p>
+    <button class="btn block small" id="testNet" style="margin-top:12px">🔌 Test connections</button>
+    <div id="testOut" class="hint" style="white-space:pre-line"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" id="closeSettings">Cancel</button>
+      <button class="btn primary" id="saveSettings">Save</button>
+    </div>
+    <p class="hint" style="margin-top:16px">
+      Postcodes: postcodes.io · Routing: openrouteservice (HGV profile) · Bridges &amp; limits: © OpenStreetMap contributors via Overpass API · Map: © OpenStreetMap contributors.
+    </p>
+  </div>
+</div>
+
+<div class="modal" id="ocrSheet">
+  <div class="sheet">
+    <h2 style="margin-top:0">Postcodes found</h2>
+    <p class="hint" style="margin-top:0">Check each one against your screen – reading screenshots isn't perfect. Untick any you don't want, fix any that are wrong.</p>
+    <div id="ocrList"></div>
+    <label for="ocrExtra">Missed one? Type it here</label>
+    <input id="ocrExtra" placeholder="e.g. LS1 4DY" autocapitalize="characters" autocomplete="off">
+    <div class="row" style="margin-top:14px">
+      <button class="btn" id="ocrCancel">Cancel</button>
+      <button class="btn primary" id="ocrAdd">Add to drops</button>
+    </div>
+  </div>
+</div>
+
+<div id="busy"><div id="busyMsg">Working…</div></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ================== Pure helpers (unit-tested) ================== */
+const M_PER_FT = 0.3048, M_PER_IN = 0.0254;
+
+function normPostcode(s){
+  const c = String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+  if (c.length < 5) return c;
+  return c.slice(0,-3) + " " + c.slice(-3);
+}
+function isPostcode(s){
+  return /^[A-Z]{1,2}[0-9][A-Z0-9]? [0-9][A-Z]{2}$/.test(normPostcode(s));
+}
+function splitPostcodes(text){
+  return String(text||"").split(/[\n,;\t]+/).map(s=>s.trim()).filter(Boolean);
+}
+// Parse an OSM length value (maxheight/maxwidth) to metres. null if not numeric.
+function parseLength(v){
+  if (v == null) return null;
+  let s = String(v).trim().toLowerCase();
+  if (!s) return null;
+  // Several values ("4.2;14'") -> use the smallest numeric
+  if (s.includes(";")){
+    const vals = s.split(";").map(parseLength).filter(x=>x!=null);
+    return vals.length ? Math.min(...vals) : null;
+  }
+  // feet & inches: 14'6"  14' 6"  14 ft 6 in  14'
+  let m = s.match(/^(\d+(?:\.\d+)?)\s*(?:'|’|ft|feet)\s*(?:(\d+(?:\.\d+)?)\s*(?:"|”|''|in|inch|inches)?)?$/);
+  if (m) return (+m[1])*M_PER_FT + (m[2]?(+m[2])*M_PER_IN:0);
+  m = s.match(/^(\d+(?:\.\d+)?)\s*(?:"|in|inch|inches)$/);
+  if (m) return (+m[1])*M_PER_IN;
+  m = s.match(/^(\d+(?:[.,]\d+)?)\s*(m|metres?|meters?)?$/);
+  if (m) return +m[1].replace(",",".");
+  return null;
+}
+// Parse OSM weight to tonnes. null if not numeric.
+function parseWeight(v){
+  if (v == null) return null;
+  let s = String(v).trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes(";")){
+    const vals = s.split(";").map(parseWeight).filter(x=>x!=null);
+    return vals.length ? Math.min(...vals) : null;
+  }
+  let m = s.match(/^(\d+(?:[.,]\d+)?)\s*(t|tonnes?|tons?|st|lt|kg|lbs?)?$/);
+  if (!m) return null;
+  const n = +m[1].replace(",",".");
+  switch (m[2]){
+    case "kg": return n/1000;
+    case "lb": case "lbs": return n*0.000453592;
+    case "st": return n*0.907185;   // short tons
+    case "lt": return n*1.016047;   // long tons
+    default: return n;              // tonnes
+  }
+}
+function mToFtIn(m){
+  let inches = Math.round(m / M_PER_IN);
+  const ft = Math.floor(inches/12); inches -= ft*12;
+  return `${ft}'${inches}"`;
+}
+const TIGHT_M = 0.15; // within 15 cm counts as tight
+/* Evaluate one OSM element's tags against the vehicle. Returns list of findings. */
+function evaluateTags(tags, veh){
+  const out = [];
+  const hKeys = ["maxheight","maxheight:physical"];
+  let hVal = null, hRaw = null;
+  for (const k of hKeys){
+    if (tags[k] == null) continue;
+    const p = parseLength(tags[k]);
+    if (p != null){ if (hVal == null || p < hVal){ hVal = p; hRaw = tags[k]; } }
+    else if (hRaw == null) hRaw = tags[k];
+  }
+  if (hVal != null){
+    const level = veh.height > hVal ? "block" : (hVal - veh.height < TIGHT_M ? "tight" : "ok");
+    out.push({kind:"height", limit:hVal, level,
+      label:`Height limit ${mToFtIn(hVal)} (${hVal.toFixed(2)} m)`});
+  } else if (hRaw != null && !/^(none|no|unsigned)$/i.test(String(hRaw).trim())){
+    out.push({kind:"height", limit:null, level:"tight", label:`Height limit not signed in metres/feet (“${hRaw}”) – check`});
+  }
+  const wVal = parseWeight(tags.maxweight ?? tags["maxweight:signed"]);
+  if (wVal != null){
+    out.push({kind:"weight", limit:wVal, level: veh.weight > wVal ? "block" : "ok",
+      label:`Weight limit ${+wVal.toFixed(1)} t`});
+  }
+  const axVal = parseWeight(tags.maxaxleload);
+  if (axVal != null && veh.axle){
+    out.push({kind:"axle", limit:axVal, level: veh.axle > axVal ? "block" : "ok",
+      label:`Axle limit ${+axVal.toFixed(1)} t`});
+  }
+  let wdVal = null;
+  for (const k of ["maxwidth","maxwidth:physical"]){
+    const p = parseLength(tags[k]); if (p != null && (wdVal==null || p<wdVal)) wdVal = p;
+  }
+  if (wdVal != null){
+    out.push({kind:"width", limit:wdVal,
+      level: veh.width > wdVal ? "block" : (wdVal - veh.width < TIGHT_M ? "tight" : "ok"),
+      label:`Width limit ${mToFtIn(wdVal)} (${wdVal.toFixed(2)} m)`});
+  }
+  const ln = parseLength(tags.maxlength);
+  if (ln != null){
+    out.push({kind:"length", limit:ln, level: veh.length > ln ? "block" : "ok", label:`Length limit ${ln.toFixed(1)} m`});
+  }
+  return out;
+}
+function worstLevel(findings){
+  if (findings.some(f=>f.level==="block")) return "block";
+  if (findings.some(f=>f.level==="tight")) return "tight";
+  return "ok";
+}
+/* Ramer–Douglas–Peucker simplification on [lon,lat] coords, tolerance in metres. */
+function simplify(coords, tolM){
+  if (coords.length < 3) return coords.slice();
+  const lat0 = coords[0][1]*Math.PI/180, kx = 111320*Math.cos(lat0), ky = 110540;
+  const P = coords.map(c=>[c[0]*kx, c[1]*ky]);
+  const keep = new Uint8Array(coords.length); keep[0]=keep[coords.length-1]=1;
+  const stack=[[0,coords.length-1]];
+  while (stack.length){
+    const [a,b] = stack.pop();
+    let maxD=0, idx=-1;
+    const [ax,ay]=P[a],[bx,by]=P[b], dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy;
+    for (let i=a+1;i<b;i++){
+      const [px,py]=P[i];
+      let t = L2 ? ((px-ax)*dx+(py-ay)*dy)/L2 : 0; t=Math.max(0,Math.min(1,t));
+      const ex=ax+t*dx-px, ey=ay+t*dy-py, d=ex*ex+ey*ey;
+      if (d>maxD){maxD=d;idx=i;}
+    }
+    if (idx>=0 && Math.sqrt(maxD)>tolM){ keep[idx]=1; stack.push([a,idx],[idx,b]); }
+  }
+  return coords.filter((_,i)=>keep[i]);
+}
+function chunk(arr, size, overlap){
+  const out=[]; if(!arr.length) return out;
+  for (let i=0;i<arr.length;i+=size-overlap){
+    out.push(arr.slice(i,i+size));
+    if (i+size>=arr.length) break;
+  }
+  return out;
+}
+function fmtDur(sec){
+  const m = Math.round(sec/60);
+  if (m < 60) return m + " min";
+  return Math.floor(m/60) + "h " + String(m%60).padStart(2,"0") + "m";
+}
+function addSecs(hhmm, secs){
+  const [h,m] = (hhmm||"08:00").split(":").map(Number);
+  const t = (h*3600 + m*60 + secs) % 86400;
+  return String(Math.floor(t/3600)).padStart(2,"0")+":"+String(Math.floor((t%3600)/60)).padStart(2,"0");
+}
+/* Pull UK postcodes out of OCR text, fixing common misreads (O/0, I/1, S/5, B/8, Z/2). */
+function extractPostcodes(text){
+  const toL = {"0":"O","1":"I","5":"S","8":"B","2":"Z","6":"G"};
+  const toD = {"O":"0","D":"0","Q":"0","I":"1","L":"1","S":"5","B":"8","Z":"2","G":"6"};
+  const L = c => toL[c] || c, D = c => toD[c] || c;
+  const up = String(text||"").toUpperCase().replace(/[|]/g,"I");
+  const re = /(?:^|[^A-Z0-9])([A-Z0-9]{2,4})[ \t]{0,2}([A-Z0-9]{3})(?=$|[^A-Z0-9])/gm;
+  const out = []; let m;
+  while ((m = re.exec(up))){
+    re.lastIndex = m.index + 1; // allow overlapping candidates
+    const o = m[1], i = m[2];
+    const inward = D(i[0]) + L(i[1]) + L(i[2]);
+    const fixes = [];
+    // outward shapes: A9, A99, AA9, AA99, A9A, AA9A
+    const shapes = {2:["LD"],3:["LDD","LLD","LDL"],4:["LLDD","LLDL"]}[o.length] || [];
+    for (const sh of shapes){
+      let ok = true, fx = "";
+      for (let k=0;k<sh.length;k++){
+        const c = sh[k]==="L" ? L(o[k]) : D(o[k]);
+        if (sh[k]==="L" ? !/[A-Z]/.test(c) : !/[0-9]/.test(c)) { ok=false; break; }
+        fx += c;
+      }
+      if (ok) fixes.push(fx);
+    }
+    // prefer the reading that changes fewest characters
+    fixes.sort((a,b)=>[...a].filter((c,k)=>c!==o[k]).length - [...b].filter((c,k)=>c!==o[k]).length);
+    for (const fx of fixes){
+      const pc = fx + " " + inward;
+      if (isPostcode(pc)) { if (!out.includes(pc)) out.push(pc); break; }
+    }
+  }
+  return out;
+}
+function escapeHtml(s){
+  return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+if (typeof module !== "undefined") {
+  module.exports = {extractPostcodes,normPostcode,isPostcode,splitPostcodes,parseLength,parseWeight,mToFtIn,evaluateTags,worstLevel,simplify,chunk,fmtDur,addSecs};
+}
+
+/* ================== App ================== */
+if (typeof window !== "undefined") (function(){
+const $ = id => document.getElementById(id);
+const STORE = "truckDropPlanner.v1";
+const OVERPASS = ["https://overpass-api.de/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
+const PRESETS = {
+  van:{height:2.8, weight:3.5, width:2.1, length:6.5},
+  "75":{height:3.6, weight:7.5, width:2.55, length:8.5},
+  "18":{height:4.0, weight:18, width:2.55, length:10},
+  "26":{height:4.1, weight:26, width:2.55, length:11},
+  "44":{height:4.2, weight:44, width:2.55, length:16.5}
+};
+
+let state = {
+  key:"", hUnit:"ft",
+  vehicle:null, // {height,weight,width,length,axle}
+  start:{postcode:"", lat:null, lon:null},
+  drops:[], // {id, postcode, note, lat, lon, bad}
+  returnToStart:false, depart:"08:00", svc:15
+};
+try { const s = JSON.parse(localStorage.getItem(STORE)||"null"); if (s) state = Object.assign(state, s); } catch(e){}
+function save(){ try{ localStorage.setItem(STORE, JSON.stringify(state)); }catch(e){} }
+
+let routeStale = false, lastRoute = null;
+function markStale(){ if (lastRoute){ routeStale = true; $("staleBanner").style.display="block"; } }
+
+/* ---------- Network ---------- */
+const IN_PREVIEW = !/^https?:$/.test(location.protocol) || (()=>{ try{ return window.self!==window.top; }catch(e){ return true; } })();
+async function netFetch(label, url, opts){
+  if (!navigator.onLine) throw new Error("Your phone is offline – check signal or Wi-Fi.");
+  try { return await fetch(url, opts); }
+  catch(e){
+    throw new Error(`Couldn't connect to ${label}. ` + (IN_PREVIEW
+      ? "This page is being opened as a file or inside a preview, which often stops it going online. Open it from a web link in Chrome instead."
+      : "Check your signal and try again. If it keeps happening, tap ⚙︎ → Test connections."));
+  }
+}
+
+/* ---------- UI helpers ---------- */
+let toastT;
+function toast(msg, ms=3200){ const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),ms); }
+function busy(msg){ if (msg){ $("busyMsg").textContent=msg; $("busy").classList.add("on"); } else $("busy").classList.remove("on"); }
+function showTab(name){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.id==="tab-"+name));
+  document.querySelectorAll("nav.bottom button").forEach(b=>b.classList.toggle("on", b.dataset.tab===name));
+  if (name==="route"){ ensureMap(); setTimeout(()=>map.invalidateSize(),50); }
+  window.scrollTo(0,0);
+}
+document.querySelectorAll("nav.bottom button").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+
+/* ---------- Vehicle ---------- */
+function setHUnit(u){
+  state.hUnit = u;
+  document.querySelectorAll("#hUnit button").forEach(b=>b.classList.toggle("on", b.dataset.u===u));
+  $("hFtRow").style.display = u==="ft" ? "flex" : "none";
+  $("hMRow").style.display = u==="m" ? "block" : "none";
+}
+function fillVehicleForm(v){
+  if (!v) return;
+  const totalIn = v.height / M_PER_IN;
+  $("hFt").value = Math.floor(totalIn/12);
+  $("hIn").value = Math.round((totalIn - Math.floor(totalIn/12)*12)*2)/2;
+  $("hM").value = v.height.toFixed(2);
+  $("wT").value = v.weight; $("widM").value = v.width; $("lenM").value = v.length;
+  $("axT").value = v.axle || "";
+}
+function readHeight(){
+  if (state.hUnit==="m") return parseFloat($("hM").value);
+  const ft = parseFloat($("hFt").value)||0, inch = parseFloat($("hIn").value)||0;
+  return ft*M_PER_FT + inch*M_PER_IN;
+}
+function vehText(v){ return v ? `${mToFtIn(v.height)} · ${+v.weight}t` : "No vehicle set"; }
+function renderVehicle(){
+  $("vehBadge").textContent = vehText(state.vehicle);
+  $("vehSummary").innerHTML = state.vehicle
+    ? `Saved: <b>${mToFtIn(state.vehicle.height)}</b> (${state.vehicle.height.toFixed(2)} m) high, <b>${+state.vehicle.weight} t</b>, ${state.vehicle.width} m wide, ${state.vehicle.length} m long${state.vehicle.axle?`, ${state.vehicle.axle} t axle`:""}.`
+    : "";
+}
+document.querySelectorAll("#hUnit button").forEach(b=>b.onclick=()=>{
+  const h = readHeight(); setHUnit(b.dataset.u);
+  if (h>0) fillVehicleForm(Object.assign({}, state.vehicle||{weight:$("wT").value,width:$("widM").value,length:$("lenM").value}, {height:h}));
+  save();
+});
+$("preset").onchange = e=>{
+  const p = PRESETS[e.target.value]; if (!p) return;
+  fillVehicleForm(Object.assign({axle:""}, p));
+};
+$("saveVeh").onclick = ()=>{
+  const v = {
+    height: readHeight(), weight: parseFloat($("wT").value),
+    width: parseFloat($("widM").value)||2.55, length: parseFloat($("lenM").value)||10,
+    axle: parseFloat($("axT").value)||null
+  };
+  if (!(v.height>1.5 && v.height<6)) return toast("Height looks wrong – check feet/inches or metres.");
+  if (!(v.weight>0 && v.weight<=60)) return toast("Enter the gross weight in tonnes.");
+  if (!(v.width>1 && v.width<4)) return toast("Width should be in metres, e.g. 2.55");
+  if (!(v.length>2 && v.length<30)) return toast("Length should be in metres, e.g. 16.5");
+  state.vehicle = v; save(); renderVehicle(); markStale();
+  toast("Vehicle saved"); showTab("drops");
+};
+
+/* ---------- Settings ---------- */
+function renderKeyBanner(){ $("keyBanner").style.display = state.key ? "none" : "block"; }
+$("openSettings").onclick = ()=>{ $("orsKey").value = state.key||""; $("settings").classList.add("on"); };
+$("closeSettings").onclick = ()=> $("settings").classList.remove("on");
+$("saveSettings").onclick = ()=>{ state.key = $("orsKey").value.trim(); save(); renderKeyBanner(); $("settings").classList.remove("on"); toast(state.key?"Key saved":"Key removed"); };
+
+/* ---------- Drops ---------- */
+let sortable;
+function newId(){ return Math.random().toString(36).slice(2,9); }
+function addPostcodes(list){
+  let added=0, bad=[];
+  for (const raw of list){
+    const pc = normPostcode(raw);
+    if (!isPostcode(pc)){ bad.push(raw); continue; }
+    state.drops.push({id:newId(), postcode:pc, note:"", lat:null, lon:null, bad:false});
+    added++;
+  }
+  save(); renderDrops(); markStale();
+  if (bad.length) toast(`Didn't look like postcodes: ${bad.slice(0,4).join(", ")}${bad.length>4?"…":""}`, 5000);
+  else if (added>1) toast(`Added ${added} drops`);
+}
+function renderDrops(){
+  const ul = $("dropList");
+  $("dropCount").textContent = state.drops.length ? `(${state.drops.length})` : "";
+  if (!state.drops.length){ ul.innerHTML = `<li class="empty">No drops yet – add a postcode above.</li>`; return; }
+  ul.innerHTML = state.drops.map((d,i)=>`
+    <li class="drop" data-id="${d.id}">
+      <span class="handle" aria-label="Drag to reorder">⠿</span>
+      <span class="num">${i+1}</span>
+      <div class="body">
+        <div class="pc">${escapeHtml(d.postcode)}${d.bad?'<span class="bad">postcode not found</span>':""}</div>
+        <input class="note" data-id="${d.id}" placeholder="Customer / note" value="${escapeHtml(d.note)}">
+      </div>
+      <div class="acts">
+        <button class="mini" data-act="up" data-id="${d.id}" ${i===0?"disabled":""} aria-label="Move up">▲</button>
+        <button class="mini" data-act="down" data-id="${d.id}" ${i===state.drops.length-1?"disabled":""} aria-label="Move down">▼</button>
+      </div>
+      <button class="mini del" data-act="del" data-id="${d.id}" aria-label="Remove">✕</button>
+    </li>`).join("");
+}
+$("dropList").addEventListener("click", e=>{
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const i = state.drops.findIndex(d=>d.id===b.dataset.id); if (i<0) return;
+  if (b.dataset.act==="del") state.drops.splice(i,1);
+  if (b.dataset.act==="up" && i>0) [state.drops[i-1],state.drops[i]]=[state.drops[i],state.drops[i-1]];
+  if (b.dataset.act==="down" && i<state.drops.length-1) [state.drops[i+1],state.drops[i]]=[state.drops[i],state.drops[i+1]];
+  save(); renderDrops(); markStale();
+});
+$("dropList").addEventListener("input", e=>{
+  if (!e.target.classList.contains("note")) return;
+  const d = state.drops.find(d=>d.id===e.target.dataset.id); if (d){ d.note = e.target.value; save(); }
+});
+if (window.Sortable){
+  sortable = Sortable.create($("dropList"), {handle:".handle", animation:150, onEnd(){
+    const ids = [...$("dropList").querySelectorAll(".drop")].map(li=>li.dataset.id);
+    state.drops.sort((a,b)=>ids.indexOf(a.id)-ids.indexOf(b.id));
+    save(); renderDrops(); markStale();
+  }});
+}
+$("addPc").onclick = ()=>{ const v=$("newPc").value; if(!v.trim()) return; addPostcodes([v]); $("newPc").value=""; $("newPc").focus(); };
+$("newPc").addEventListener("keydown", e=>{ if (e.key==="Enter"){ e.preventDefault(); $("addPc").click(); }});
+/* ---------- Screenshots (OCR) ---------- */
+let ocrWorker = null;
+function loadScript(src){ return new Promise((res,rej)=>{ const sc=document.createElement("script"); sc.src=src; sc.onload=res; sc.onerror=()=>rej(new Error("Couldn't load the screenshot reader – check your internet.")); document.head.appendChild(sc); }); }
+async function getOcr(){
+  if (ocrWorker) return ocrWorker;
+  if (!window.Tesseract) await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js");
+  ocrWorker = await Tesseract.createWorker("eng");
+  return ocrWorker;
+}
+$("shotBtn").onclick = ()=> $("shotInput").click();
+$("shotInput").onchange = async e=>{
+  const files = [...e.target.files]; e.target.value = "";
+  if (!files.length) return;
+  busy("Getting the screenshot reader ready… (first time takes a moment)");
+  try{
+    const w = await getOcr(); let found = [];
+    for (let i=0;i<files.length;i++){
+      busy(`Reading screenshot ${i+1} of ${files.length}…`);
+      const {data} = await w.recognize(files[i]);
+      for (const pc of extractPostcodes(data.text)) if (!found.includes(pc)) found.push(pc);
+    }
+    busy();
+    openOcrSheet(found);
+  }catch(err){ busy(); toast(err.message || "Couldn't read that screenshot", 6000); }
+};
+function openOcrSheet(found){
+  const have = new Set(state.drops.map(d=>d.postcode));
+  $("ocrList").innerHTML = found.length ? found.map((pc,i)=>`
+    <div class="ocrrow"><input type="checkbox" id="oc${i}" ${have.has(pc)?"":"checked"}>
+      <input type="text" value="${escapeHtml(pc)}" autocapitalize="characters" aria-label="Postcode ${i+1}">
+      ${have.has(pc)?'<span class="dup">already added</span>':""}</div>`).join("")
+    : `<p class="empty">No postcodes spotted. Try a clearer screenshot with the postcodes on screen, or type them below.</p>`;
+  $("ocrExtra").value = "";
+  $("ocrSheet").classList.add("on");
+}
+$("ocrCancel").onclick = ()=> $("ocrSheet").classList.remove("on");
+$("ocrAdd").onclick = ()=>{
+  const list = [...$("ocrList").querySelectorAll(".ocrrow")].filter(r=>r.querySelector("input[type=checkbox]").checked).map(r=>r.querySelector("input[type=text]").value);
+  list.push(...splitPostcodes($("ocrExtra").value));
+  $("ocrSheet").classList.remove("on");
+  if (list.length) addPostcodes(list); else toast("Nothing added");
+};
+$("addPaste").onclick = ()=>{ const l = splitPostcodes($("pasteBox").value); if(!l.length) return; addPostcodes(l); $("pasteBox").value=""; };
+$("clearBtn").onclick = ()=>{
+  const b=$("clearBtn");
+  if (b.dataset.confirm){ state.drops=[]; save(); renderDrops(); markStale(); b.textContent="Clear all drops"; delete b.dataset.confirm; return; }
+  b.dataset.confirm="1"; b.textContent="Tap again to clear all"; setTimeout(()=>{ b.textContent="Clear all drops"; delete b.dataset.confirm; },3000);
+};
+$("copyBtn").onclick = async ()=>{
+  const text = state.drops.map((d,i)=>`${i+1}. ${d.postcode}${d.note?" – "+d.note:""}`).join("\n");
+  if (!text) return toast("No drops to copy");
+  try { await navigator.clipboard.writeText(text); toast("Postcodes copied in drop order"); }
+  catch(e){ $("pasteBox").value = text; $("pasteBox").closest("details").open = true; $("pasteBox").select(); toast("Select and copy the list in the box"); }
+};
+
+/* Start point */
+$("startPc").value = state.start.postcode||"";
+$("startPc").addEventListener("change", ()=>{
+  state.start = {postcode: normPostcode($("startPc").value), lat:null, lon:null};
+  $("startPc").value = state.start.postcode; save(); markStale();
+});
+$("depart").value = state.depart; $("svc").value = state.svc; $("rtn").checked = !!state.returnToStart;
+$("depart").onchange = ()=>{ state.depart=$("depart").value; save(); };
+$("svc").onchange = ()=>{ state.svc=Math.max(0,parseInt($("svc").value)||0); save(); };
+$("rtn").onchange = ()=>{ state.returnToStart=$("rtn").checked; save(); markStale(); };
+
+function getPosition(){
+  return new Promise((res,rej)=>{
+    if (!navigator.geolocation) return rej(new Error("Location isn't available on this device."));
+    navigator.geolocation.getCurrentPosition(p=>res(p.coords), e=>rej(new Error("Couldn't get your location ("+e.message+").")), {enableHighAccuracy:true, timeout:15000});
+  });
+}
+$("useLoc").onclick = async ()=>{
+  busy("Finding your location…");
+  try{
+    const c = await getPosition();
+    let pc = "My location";
+    try{
+      const r = await netFetch("the postcode lookup", `https://api.postcodes.io/postcodes?lon=${c.longitude}&lat=${c.latitude}&limit=1`);
+      const j = await r.json(); if (j.result && j.result[0]) pc = j.result[0].postcode;
+    }catch(e){}
+    state.start = {postcode: pc, lat:c.latitude, lon:c.longitude, fromGps:true};
+    $("startPc").value = pc; save(); markStale(); toast("Start set to your location");
+  }catch(e){ toast(e.message, 5000); }
+  busy();
+};
+
+/* ---------- Geocoding (postcodes.io) ---------- */
+async function geocode(){
+  const items = [];
+  if (!state.start.fromGps && state.start.postcode && state.start.lat==null) items.push(state.start);
+  for (const d of state.drops) if (d.lat==null) items.push(d);
+  if (!items.length) return;
+  for (let i=0;i<items.length;i+=100){
+    const part = items.slice(i,i+100);
+    const r = await netFetch("the postcode lookup (postcodes.io)", "https://api.postcodes.io/postcodes", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({postcodes: part.map(x=>x.postcode)})});
+    if (!r.ok) throw new Error("Postcode lookup failed ("+r.status+")");
+    const j = await r.json();
+    j.result.forEach((res,k)=>{
+      const it = part[k];
+      if (res.result){ it.lat = res.result.latitude; it.lon = res.result.longitude; it.bad=false; }
+      else it.bad = true;
+    });
+  }
+  save(); renderDrops();
+}
+
+/* ---------- OpenRouteService ---------- */
+function orsRestrictions(v){
+  const r = {height:+v.height.toFixed(2), weight:+v.weight, width:+v.width, length:+v.length};
+  if (v.axle) r.axleload = +v.axle;
+  return r;
+}
+async function orsFetch(url, body){
+  const r = await netFetch("OpenRouteService (routing)", url, {method:"POST", headers:{"Authorization":state.key, "Content-Type":"application/json", "Accept":"application/json, application/geo+json"}, body:JSON.stringify(body)});
+  let j=null; try{ j = await r.json(); }catch(e){}
+  if (!r.ok){
+    const msg = j && (j.error && (j.error.message || j.error)) || j && j.message || ("HTTP "+r.status);
+    if (r.status===401 || r.status===403) throw new Error("Your OpenRouteService key was rejected. Check it in ⚙︎ Settings.");
+    if (r.status===429) throw new Error("OpenRouteService daily limit reached – try again later.");
+    if (j && j.error && j.error.code===2009) throw new Error("No truck-legal route found for these dimensions to one of the drops. Check the drop postcodes and your vehicle size.");
+    if (j && j.error && j.error.code===2010) throw new Error("A postcode is too far from a road the truck can use: " + msg);
+    throw new Error("Routing error: " + (typeof msg==="string"?msg:JSON.stringify(msg)));
+  }
+  return j;
+}
+function checkReady(){
+  if (!state.vehicle){ toast("Set your vehicle first"); showTab("vehicle"); return false; }
+  if (!state.key){ $("settings").classList.add("on"); toast("Add your free routing key first"); return false; }
+  if (!state.start.postcode && state.start.lat==null){ toast("Enter a start postcode"); $("startPc").focus(); return false; }
+  if (!state.drops.length){ toast("Add at least one drop"); return false; }
+  return true;
+}
+function badCheck(){
+  if (state.start.bad){ throw new Error(`Start postcode ${state.start.postcode} wasn't found.`); }
+  const bad = state.drops.filter(d=>d.bad);
+  if (bad.length) throw new Error(`Postcode not found: ${bad.map(d=>d.postcode).join(", ")}. Fix or remove ${bad.length>1?"them":"it"}.`);
+}
+
+$("optBtn").onclick = async ()=>{
+  if (!checkReady()) return;
+  if (state.drops.length<2) return toast("Need at least 2 drops to suggest an order");
+  busy("Working out a sensible order…");
+  try{
+    await geocode(); badCheck();
+    const startLoc = [state.start.lon, state.start.lat];
+    const body = {
+      jobs: state.drops.map((d,i)=>({id:i+1, location:[d.lon,d.lat], service: state.svc*60})),
+      vehicles: [Object.assign({id:1, profile:"driving-hgv", start:startLoc}, state.returnToStart?{end:startLoc}:{})]
+    };
+    const j = await orsFetch("https://api.openrouteservice.org/optimization", body);
+    const order = j.routes[0].steps.filter(s=>s.type==="job").map(s=>s.job ?? s.id);
+    const old = state.drops.slice();
+    state.drops = order.map(id=>old[id-1]).concat(old.filter((_,i)=>!order.includes(i+1)));
+    save(); renderDrops(); markStale();
+    toast("Suggested order set – drag to change anything, then Plan route", 5000);
+  }catch(e){ toast(e.message, 6000); }
+  busy();
+};
+
+$("planBtn").onclick = planRoute;
+async function planRoute(){
+  if (!checkReady()) return;
+  const n = state.drops.length + 1 + (state.returnToStart?1:0);
+  if (n>50) return toast("Too many stops for one route (max 48 drops). Split the round.");
+  busy("Looking up postcodes…");
+  try{
+    await geocode(); badCheck();
+    busy("Planning a truck-safe route…");
+    const pts = [state.start, ...state.drops]; if (state.returnToStart) pts.push(state.start);
+    const body = {
+      coordinates: pts.map(p=>[p.lon,p.lat]),
+      radiuses: pts.map(()=>1500),
+      instructions:true, units:"mi", language:"en",
+      options:{vehicle_type:"hgv", profile_params:{restrictions: orsRestrictions(state.vehicle)}}
+    };
+    const gj = await orsFetch("https://api.openrouteservice.org/v2/directions/driving-hgv/geojson", body);
+    lastRoute = {gj, pts, vehicle: Object.assign({},state.vehicle)};
+    routeStale = false; $("staleBanner").style.display="none";
+    busy();
+    showTab("route");
+    drawRoute();
+    checkRouteRestrictions();
+  }catch(e){ busy(); toast(e.message, 7000); }
+}
+
+/* ---------- Map ---------- */
+let map, routeLayer, stopLayer, restrLayer, areaLayer, meLayer;
+function ensureMap(){
+  if (map) return;
+  if (!window.L){ $("map").innerHTML = '<p class="empty">Map couldn\'t load – check your internet connection.</p>'; map={invalidateSize(){},setView(){},getZoom(){return 0}}; return; }
+  map = L.map("map", {zoomControl:true}).setView([53.5,-2.2], 6);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom:19,
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  routeLayer = L.layerGroup().addTo(map); stopLayer = L.layerGroup().addTo(map);
+  restrLayer = L.layerGroup().addTo(map); areaLayer = L.layerGroup().addTo(map); meLayer = L.layerGroup().addTo(map);
+}
+function pinIcon(text, cls){ return L.divIcon({className:"", html:`<div class="pin ${cls||""}">${text}</div>`, iconSize:[28,28], iconAnchor:[14,14]}); }
+function drawRoute(){
+  ensureMap(); if (!lastRoute) return;
+  const {gj, pts} = lastRoute;
+  const f = gj.features[0];
+  if (window.L){
+    routeLayer.clearLayers(); stopLayer.clearLayers(); restrLayer.clearLayers();
+    const latlngs = f.geometry.coordinates.map(c=>[c[1],c[0]]);
+    L.polyline(latlngs, {color:"#1b2a3a", weight:7, opacity:.35}).addTo(routeLayer);
+    L.polyline(latlngs, {color:"#1565c0", weight:4}).addTo(routeLayer);
+    L.marker([pts[0].lat,pts[0].lon], {icon:pinIcon("S","start")}).bindPopup(`Start: ${escapeHtml(pts[0].postcode)}`).addTo(stopLayer);
+    state.drops.forEach((d,i)=>{
+      if (d.lat==null) return;
+      L.marker([d.lat,d.lon], {icon:pinIcon(i+1)}).bindPopup(`<b>Drop ${i+1}</b>: ${escapeHtml(d.postcode)}${d.note?"<br>"+escapeHtml(d.note):""}`).addTo(stopLayer);
+    });
+    map.fitBounds(L.latLngBounds(latlngs).pad(0.08));
+  }
+
+  // Summary
+  const s = f.properties.summary || {distance:0,duration:0};
+  const segs = f.properties.segments || [];
+  const nDrops = state.drops.length;
+  const total = s.duration + nDrops*state.svc*60;
+  $("sMiles").textContent = (s.distance||0).toFixed(1);
+  $("sDrive").textContent = fmtDur(s.duration||0);
+  $("sFinish").textContent = addSecs(state.depart, total);
+  $("summaryCard").style.display = "block"; $("noRoute").style.display = "none";
+
+  // Legs
+  let t = 0, html = "";
+  segs.forEach((seg,i)=>{
+    t += seg.duration;
+    const isReturn = i >= nDrops;
+    const d = isReturn ? null : state.drops[i];
+    const arrive = addSecs(state.depart, t);
+    const title = isReturn ? `Back to start (${escapeHtml(pts[0].postcode)})` : `${escapeHtml(d.postcode)}${d.note?" · "+escapeHtml(d.note):""}`;
+    const steps = (seg.steps||[]).map(st=>`<li>${escapeHtml(st.instruction)} <span class="d">${st.distance>=0.1?st.distance.toFixed(1)+" mi":Math.round(st.distance*1760)+" yd"}</span></li>`).join("");
+    html += `<details class="leg"><summary>
+      <span class="num" style="${isReturn?"background:var(--go)":""}">${isReturn?"S":i+1}</span>
+      <span><b>${title}</b><br><span class="hint" style="margin:0">${seg.distance.toFixed(1)} mi · ${fmtDur(seg.duration)} · tap for directions</span></span>
+      <span class="eta">arrive<br><b>${arrive}</b></span></summary>
+      <ol class="steps">${steps}</ol></details>`;
+    if (!isReturn) t += state.svc*60;
+  });
+  $("legs").innerHTML = html; $("legsCard").style.display = "block";
+}
+
+/* ---------- Overpass: bridges & limits ---------- */
+const KEY_RE = '"^(maxheight|maxheight:physical|maxweight|maxweight:signed|maxwidth|maxwidth:physical|maxaxleload|maxlength)$"';
+async function overpass(q){
+  let lastErr;
+  for (const url of OVERPASS){
+    for (let attempt=0; attempt<2; attempt++){
+      try{
+        const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:"data="+encodeURIComponent(q)});
+        if (r.status===429 || r.status===504){ lastErr=new Error("busy"); await new Promise(z=>setTimeout(z,4000)); continue; }
+        if (!r.ok){ lastErr = new Error("HTTP "+r.status); break; }
+        return await r.json();
+      }catch(e){ lastErr = e; break; }
+    }
+  }
+  throw lastErr || new Error("Overpass failed");
+}
+function elemPos(el){ return el.type==="node" ? [el.lat, el.lon] : (el.center ? [el.center.lat, el.center.lon] : null); }
+function describeEl(tags){
+  const bits = [];
+  if (tags.name) bits.push(tags.name);
+  if (tags.ref) bits.push(tags.ref);
+  if (tags.bridge && tags.bridge!=="no") bits.push("on a bridge");
+  if (tags.tunnel && tags.tunnel!=="no") bits.push("tunnel");
+  if (tags.highway && !bits.length) bits.push(tags.highway.replace(/_/g," ") + " road");
+  if (tags.barrier) bits.push(tags.barrier.replace(/_/g," "));
+  return bits.join(" · ");
+}
+function addRestrictionMarkers(elements, layer, veh, seen){
+  const found = [];
+  for (const el of elements){
+    const id = el.type+el.id; if (seen.has(id)) continue; seen.add(id);
+    const pos = elemPos(el); if (!pos || !el.tags) continue;
+    const fs = evaluateTags(el.tags, veh); if (!fs.length) continue;
+    const level = worstLevel(fs);
+    const main = fs.find(f=>f.level===level) || fs[0];
+    const short = main.kind==="height"||main.kind==="width" ? (main.limit?mToFtIn(main.limit):"?") : (main.limit?(+main.limit.toFixed(1))+"t":"?");
+    let m = null;
+    if (window.L){
+    const icon = L.divIcon({className:"", html:`<div class="rpin ${level}">${main.kind==="height"?"↕":main.kind==="width"?"↔":"⚖"} ${short}</div>`, iconSize:null, iconAnchor:[20,10]});
+    const verdict = level==="block" ? "<b style='color:#c62828'>Your vehicle is over this limit</b>" : level==="tight" ? "<b style='color:#d98200'>Tight / unclear – check</b>" : "Your vehicle is within this limit";
+    m = L.marker(pos, {icon, zIndexOffset: level==="block"?1000:level==="tight"?500:0})
+      .bindPopup(`${fs.map(f=>escapeHtml(f.label)).join("<br>")}<br>${escapeHtml(describeEl(el.tags))}<br>${verdict}<br><a href="https://www.openstreetmap.org/${el.type}/${el.id}" target="_blank" rel="noopener">View on OpenStreetMap</a>`);
+    m.addTo(layer);
+    }
+    found.push({pos, level, findings:fs, where:describeEl(el.tags), marker:m});
+  }
+  return found;
+}
+async function checkRouteRestrictions(){
+  if (!lastRoute) return;
+  const veh = lastRoute.vehicle;
+  $("restrCard").style.display="block"; $("restrList").innerHTML="";
+  $("restrStatus").textContent = "Checking OpenStreetMap for bridges and limits along the route…";
+  const coords = lastRoute.gj.features[0].geometry.coordinates;
+  const simp = simplify(coords, 8);
+  const parts = chunk(simp, 250, 1);
+  const seen = new Set(); let found = [], failed = 0;
+  for (let i=0;i<parts.length;i++){
+    $("restrStatus").textContent = `Checking bridges and limits along the route… (${i+1}/${parts.length})`;
+    const poly = parts[i].map(c=>`${c[1].toFixed(6)},${c[0].toFixed(6)}`).join(",");
+    const q = `[out:json][timeout:90];(way(around:25,${poly})[~${KEY_RE}~"."];node(around:25,${poly})[~${KEY_RE}~"."];);out center;`;
+    try{
+      const j = await overpass(q);
+      found = found.concat(addRestrictionMarkers(j.elements||[], restrLayer, veh, seen));
+    }catch(e){ failed++; }
+  }
+  renderRestrictions(found, failed, parts.length);
+}
+function renderRestrictions(found, failed, total){
+  const order = {block:0,tight:1,ok:2};
+  found.sort((a,b)=>order[a.level]-order[b.level]);
+  const nb = found.filter(f=>f.level==="block").length, nt = found.filter(f=>f.level==="tight").length, no = found.filter(f=>f.level==="ok").length;
+  let msg = "";
+  if (failed===total) msg = "Couldn't reach the bridge database right now – try again later. The route itself was still planned for your vehicle size.";
+  else {
+    msg = nb ? `⚠️ ${nb} restriction${nb>1?"s":""} your vehicle is over. ` : "No limits found that your vehicle is over. ";
+    if (nt) msg += `${nt} tight or unclear. `;
+    if (no) msg += `${no} you're within. `;
+    if (nb) msg += "Red ones can be false alarms where the route goes OVER a bridge rather than under it, or where a weight limit has ‘except for access’ – tap each to check, and re-plan if it's really on your path.";
+    if (failed) msg += ` (${failed} section${failed>1?"s":""} couldn't be checked.)`;
+  }
+  $("restrStatus").textContent = msg;
+  $("restrList").innerHTML = "";
+  found.filter(f=>f.level!=="ok").forEach(f=>{
+    const li = document.createElement("li"); li.className="ritem";
+    li.innerHTML = `<span class="dot ${f.level}"></span><span><span class="t">${f.findings.filter(x=>x.level!=="ok").map(x=>escapeHtml(x.label)).join(" · ")}</span><br><span class="s">${escapeHtml(f.where||"")}</span></span>`;
+    li.onclick = ()=>{ map.setView(f.pos, 17); if (f.marker) f.marker.openPopup(); window.scrollTo({top:0,behavior:"smooth"}); };
+    $("restrList").appendChild(li);
+  });
+}
+$("areaBtn").onclick = async ()=>{
+  ensureMap(); if (!window.L) return;
+  if (!state.vehicle){ toast("Set your vehicle first"); return showTab("vehicle"); }
+  if (map.getZoom() < 12) return toast("Zoom in closer first (town level), then try again");
+  const b = map.getBounds();
+  busy("Checking this area for low bridges & limits…");
+  try{
+    const q = `[out:json][timeout:60];(way[~${KEY_RE}~"."](${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()});node[~${KEY_RE}~"."](${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}););out center;`;
+    const j = await overpass(q);
+    areaLayer.clearLayers();
+    const found = addRestrictionMarkers(j.elements||[], areaLayer, state.vehicle, new Set());
+    const nb = found.filter(f=>f.level==="block").length, nt = found.filter(f=>f.level==="tight").length;
+    toast(found.length ? `${found.length} limits in view: ${nb} you're over, ${nt} tight/unclear` : "No limits recorded in this area", 5000);
+  }catch(e){ toast("Couldn't reach the bridge database – try again shortly."); }
+  busy();
+};
+$("locBtn").onclick = async ()=>{
+  ensureMap(); if (!window.L) return;
+  try{ const c = await getPosition(); meLayer.clearLayers();
+    L.circleMarker([c.latitude,c.longitude],{radius:8,color:"#fff",weight:3,fillColor:"#1565c0",fillOpacity:1}).addTo(meLayer);
+    map.setView([c.latitude,c.longitude], 14);
+  }catch(e){ toast(e.message, 5000); }
+};
+
+$("testNet").onclick = async ()=>{
+  const out = $("testOut"); const key = $("orsKey").value.trim() || state.key;
+  const lines = [`Page opened from: ${location.protocol==="file:"?"a file on the phone":location.protocol==="content:"?"a file on the phone":location.host||location.protocol}${IN_PREVIEW?" (file or preview – may be blocked from going online)":""}`];
+  out.textContent = lines.join("\n") + "\nTesting…";
+  const t = async (name, fn)=>{ try{ lines.push(`${await fn()} ${name}`); }catch(e){ lines.push(`❌ ${name}: can't connect`); } out.textContent = lines.join("\n"); };
+  await t("Postcode lookup", async()=>{ const r = await fetch("https://api.postcodes.io/postcodes/SW1A2AA"); return (r.ok||r.status===404)?"✅":"⚠️ ("+r.status+")"; });
+  await t("Routing (OpenRouteService)", async()=>{
+    if (!key) return "⚠️ no key entered –";
+    const r = await fetch("https://api.openrouteservice.org/v2/directions/driving-hgv?api_key="+encodeURIComponent(key)+"&start=-2.33,53.47&end=-2.30,53.48");
+    if (r.status===401||r.status===403) return "❌ key rejected –";
+    if (r.status===429) return "⚠️ daily limit used up –";
+    return r.ok ? "✅" : "⚠️ ("+r.status+")";
+  });
+  await t("Bridge data (Overpass)", async()=>{ const r = await fetch(OVERPASS[0]+"?data="+encodeURIComponent("[out:json];node(1);out;")); return r.ok?"✅":"⚠️ ("+r.status+")"; });
+};
+
+/* ---------- Init ---------- */
+if (IN_PREVIEW) $("previewBanner").style.display = "block";
+setHUnit(state.hUnit||"ft");
+if (state.vehicle) fillVehicleForm(state.vehicle);
+renderVehicle(); renderDrops(); renderKeyBanner();
+showTab(state.vehicle ? "drops" : "vehicle");
+})();
+</script>
+</body>
+</html>
