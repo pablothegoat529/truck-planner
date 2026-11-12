@@ -98,6 +98,17 @@
   .pin.start{background:var(--go)}
   .rpin{border:2px solid #fff;border-radius:6px;padding:1px 4px;font-size:11px;font-weight:800;color:#fff;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
   .rpin.block{background:var(--stop)}.rpin.tight{background:var(--warn)}.rpin.ok{background:var(--go);opacity:.75}
+  .drop.done{opacity:.55}
+  .ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:13px;color:var(--muted)}
+  .ctl input.cars{width:46px;padding:4px 6px;font-size:14px;text-align:center}
+  .load{font-weight:700;color:var(--ink)}
+  .load.over{color:var(--stop)}
+  .donebtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 8px;font:inherit;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;margin-left:auto}
+  .donebtn.on{background:var(--go);border-color:var(--go);color:#fff}
+  button.kind{border:0;cursor:pointer;font-family:inherit}
+  .kind.none{background:#9aa3ab}
+  .pin.done{background:#9aa3ab}
+  details.leg.done summary b{text-decoration:line-through;color:var(--muted)}
   .kind{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;border-radius:6px;padding:2px 6px;margin-right:6px;vertical-align:middle;color:#fff}
   .kind.collect{background:#2f4f8f}.kind.deliver{background:#2e8b3d}
   .ocrrow{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
@@ -179,6 +190,11 @@
         <div><label for="depart">Leave at</label><input id="depart" type="time" value="08:00"></div>
         <div><label for="svc">Mins per drop</label><input id="svc" type="number" inputmode="numeric" min="0" value="15"></div>
       </div>
+      <div class="row">
+        <div><label for="cap">Max cars on wagon today</label><input id="cap" type="number" inputmode="numeric" min="1" max="12" value="7"></div>
+        <div></div>
+      </div>
+      <p class="hint" style="margin-top:4px">Lower it on days with bigger cars. Collect/Deliver stops count cars on and off.</p>
       <label style="display:flex;align-items:center;gap:8px;color:var(--ink);font-size:15px;margin-top:12px">
         <input type="checkbox" id="rtn" style="width:auto"> Return to start at the end
       </label>
@@ -199,7 +215,7 @@
       <input type="file" id="shotInput" accept="image/*" multiple style="display:none">
       <p class="hint">Screenshot your job list in any app, then pick the screenshots here. It reads the postcodes and vehicle registrations for you, and puts the regs in each drop's note.</p>
       <ul id="dropList"></ul>
-      <p class="hint">Drag <b>⠿</b> or use the arrows to put drops in the order you want to do them.</p>
+      <p class="hint">Drag <b>⠿</b> or use the arrows to put drops in the order you want to do them. Tap the grey/blue/green label to switch a stop between <b>Stop</b>, <b>Collect</b> and <b>Deliver</b>. Tap <b>✓ Done</b> as you finish each one.</p>
     </div>
 
     <div class="card">
@@ -231,6 +247,21 @@
         <div class="stat"><b id="sDrive">–</b><span>driving</span></div>
         <div class="stat"><b id="sFinish">–</b><span>finish (est.)</span></div>
       </div>
+    </div>
+
+    <div class="card" id="exportCard" style="display:none">
+      <button class="btn dark block" id="gpxBtn">🧭 Export for TomTom</button>
+      <details style="margin-top:8px">
+        <summary style="font-size:14px;color:#1559a8;cursor:pointer">How to get it on your TomTom</summary>
+        <ol class="hint" style="padding-left:18px;margin:8px 0 0">
+          <li>Tap <b>Export for TomTom</b> – a <i>.gpx</i> file saves to your Downloads.</li>
+          <li>In Chrome, go to <b>plan.tomtom.com</b> and log in with your TomTom account.</li>
+          <li>Open <b>My Items → Routes → Import a GPX file</b> and pick the file.</li>
+          <li>Each leg appears as its own route (01, 02…). Use the ⋮ next to each and tap <b>Sync route</b>.</li>
+          <li>On your GO (online via your hotspot), open <b>My Routes</b> and pick the next leg.</li>
+        </ol>
+        <p class="hint">Your TomTom follows these legs exactly and won't re-route round traffic. If you're diverted, stop the track and navigate to the postcode normally – and watch the signs.</p>
+      </details>
     </div>
 
     <div class="card" id="restrCard" style="display:none">
@@ -545,42 +576,68 @@ function mergeNote(note, regs){
 }
 /* Optimisation request: plain drops are jobs; a collection linked to a delivery is a shipment,
    so the optimiser always puts the collection first. */
-function buildOptimization(drops, startLoc, ret, service){
+function buildOptimization(drops, startLoc, ret, service, cap){
   const byId = {}; drops.forEach((d,i)=>byId[d.id]=i);
   const jobs = [], shipments = [], map = {job:{}, pickup:{}, delivery:{}};
   const inShipment = new Set();
+  const cars = d => Math.max(0, parseInt(d.cars)||0);
   let n = 0;
   drops.forEach((d,i)=>{
     if (d.kind==="collect" && d.deliverTo && byId[d.deliverTo]!=null){
       const t = drops[byId[d.deliverTo]]; n++;
-      shipments.push({amount:[1], pickup:{id:n, location:[d.lon,d.lat], service}, delivery:{id:n, location:[t.lon,t.lat], service}});
+      shipments.push({amount:[cars(d)], pickup:{id:n, location:[d.lon,d.lat], service}, delivery:{id:n, location:[t.lon,t.lat], service}});
       map.pickup[n] = i; map.delivery[n] = byId[d.deliverTo];
       inShipment.add(i); inShipment.add(byId[d.deliverTo]);
     }
   });
-  drops.forEach((d,i)=>{ if (!inShipment.has(i)){ jobs.push({id:i+1, location:[d.lon,d.lat], service}); map.job[i+1] = i; } });
-  const vehicle = Object.assign({id:1, profile:"driving-hgv", start:startLoc}, ret?{end:startLoc}:{});
-  if (shipments.length) vehicle.capacity = [shipments.length];
+  drops.forEach((d,i)=>{
+    if (inShipment.has(i)) return;
+    const job = {id:i+1, location:[d.lon,d.lat], service};
+    if (d.kind==="collect") job.pickup = [cars(d)];
+    if (d.kind==="deliver") job.delivery = [cars(d)]; // already on the wagon at the start
+    jobs.push(job); map.job[i+1] = i;
+  });
+  const vehicle = Object.assign({id:1, profile:"driving-hgv", start:startLoc, capacity:[cap||7]}, ret?{end:startLoc}:{});
   const body = {vehicles:[vehicle]};
   if (jobs.length) body.jobs = jobs;
   if (shipments.length) body.shipments = shipments;
   body._map = map;
   return body;
 }
-/* Turn the optimiser's steps back into a drop order. A delivery shared by several
-   collections goes where its last delivery step is (after all of its collections). */
-function applyOptimization(drops, steps, map){
-  const pos = {};
-  steps.forEach((s,k)=>{
-    const t = s.type, id = s.id ?? s.job;
+/* Turn the optimiser's steps back into a drop order. If the optimiser visits a shared
+   delivery point more than once (e.g. to unload before the wagon is full), that delivery
+   is split into one stop per visit, each with only the cars from its own collections. */
+function applyOptimization(drops, steps, map, makeId){
+  makeId = makeId || (()=>Math.random().toString(36).slice(2,9));
+  const visits = [];
+  for (const st of steps){
+    const t = st.type, id = st.id ?? st.job;
     const i = map[t] ? map[t][id] : undefined;
-    if (i == null) return;
-    if (t === "delivery") pos[i] = k;            // last occurrence
-    else if (pos[i] == null) pos[i] = k;         // first occurrence
-  });
-  const idx = drops.map((_,i)=>i);
-  idx.sort((a,b)=>(pos[a] ?? 1e9) - (pos[b] ?? 1e9) || a-b);
-  return idx.map(i=>drops[i]);
+    if (i == null) continue;
+    const last = visits[visits.length-1];
+    if (t === "delivery" && last && last.type === "delivery" && last.i === i) last.sids.push(id);
+    else visits.push({i, type:t, sids:[id]});
+  }
+  const deliveryVisits = {};
+  visits.forEach(v=>{ if (v.type==="delivery") deliveryVisits[v.i] = (deliveryVisits[v.i]||0) + 1; });
+  const out = [], used = new Set();
+  for (const v of visits){
+    const d = drops[v.i];
+    if (v.type === "delivery" && deliveryVisits[v.i] > 1){
+      const collects = v.sids.map(sid=>drops[map.pickup[sid]]);
+      const part = Object.assign({}, d, {
+        id: used.has(v.i) ? makeId() : d.id,
+        cars: collects.reduce((n,c)=>n + (parseInt(c.cars)||0), 0),
+        note: collects.map(c=>c.note).filter(Boolean).join(", ")
+      });
+      collects.forEach(c=>{ c.deliverTo = part.id; });
+      used.add(v.i); out.push(part);
+    } else if (!used.has(v.i)){
+      used.add(v.i); out.push(d);
+    }
+  }
+  drops.forEach((d,i)=>{ if (!used.has(i)) out.push(d); });  // anything the optimiser couldn't fit
+  return out;
 }
 /* Move any delivery that sits above one of its collections to just after its last collection. */
 function deliveriesAfterCollections(drops){
@@ -593,11 +650,52 @@ function deliveriesAfterCollections(drops){
   }
   return out;
 }
+/* Cars on the wagon after each stop. Collect adds its cars, Deliver takes them off. */
+function loadTimeline(drops, cap){
+  let load = 0;
+  return drops.map(d=>{
+    const n = Math.max(0, parseInt(d.cars)||0);
+    if (d.kind==="collect") load += n;
+    else if (d.kind==="deliver") load = Math.max(0, load - n);
+    return {load, over: load > cap};
+  });
+}
+function countRegs(note){ return String(note||"").split(/\s*,\s*/).filter(Boolean).length; }
+function hhmm(ms){ const t = new Date(ms); return String(t.getHours()).padStart(2,"0")+":"+String(t.getMinutes()).padStart(2,"0"); }
+function toSecs(hm){ const [h,m] = String(hm||"08:00").split(":").map(Number); return (h||0)*3600 + (m||0)*60; }
+function secsToHm(x){ x = ((Math.round(x)%86400)+86400)%86400; return String(Math.floor(x/3600)).padStart(2,"0")+":"+String(Math.floor((x%3600)/60)).padStart(2,"0"); }
+function msToDaySecs(ms){ const t = new Date(ms); return t.getHours()*3600 + t.getMinutes()*60 + t.getSeconds(); }
+/* Arrival times per leg. A ticked-off stop resets the clock to when it was done. */
+function legTimes(segs, routeDrops, departHm, svcSecs){
+  let clock = toSecs(departHm); const out = [];
+  segs.forEach((seg,i)=>{
+    const d = routeDrops[i];
+    clock += seg.duration;
+    if (d && d.done){ out.push({arrive:null, done:hhmm(d.done)}); clock = msToDaySecs(d.done); }
+    else { out.push({arrive:secsToHm(clock), done:null}); if (d) clock += svcSecs; }
+  });
+  return {legs:out, finish:secsToHm(clock)};
+}
+/* GPX for TomTom: one track per leg, split at the route's waypoints. */
+function buildGpx(gj, legNames, tolM){
+  const f = gj.features[0], c = f.geometry.coordinates;
+  const wp = (f.properties && f.properties.way_points) || [0, c.length-1];
+  const esc = x => String(x).replace(/[<>&"']/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;","'":"&apos;"}[ch]));
+  let trks = "";
+  for (let i=0; i<wp.length-1; i++){
+    if (legNames[i] == null) continue; // skipped (e.g. already done)
+    const seg = simplify(c.slice(wp[i], wp[i+1]+1), tolM||4);
+    trks += `  <trk><name>${esc(legNames[i])}</name><trkseg>\n` +
+      seg.map(p=>`    <trkpt lat="${p[1].toFixed(6)}" lon="${p[0].toFixed(6)}"></trkpt>`).join("\n") +
+      `\n  </trkseg></trk>\n`;
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Truck Drop Planner" xmlns="http://www.topografix.com/GPX/1/1">\n${trks}</gpx>\n`;
+}
 function escapeHtml(s){
   return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 if (typeof module !== "undefined") {
-  module.exports = {deliveriesAfterCollections,buildOptimization,applyOptimization,extractRegs,parseJobs,mergeNote,extractPostcodes,normPostcode,isPostcode,splitPostcodes,parseLength,parseWeight,mToFtIn,evaluateTags,worstLevel,simplify,chunk,fmtDur,addSecs};
+  module.exports = {loadTimeline,countRegs,legTimes,buildGpx,toSecs,secsToHm,deliveriesAfterCollections,buildOptimization,applyOptimization,extractRegs,parseJobs,mergeNote,extractPostcodes,normPostcode,isPostcode,splitPostcodes,parseLength,parseWeight,mToFtIn,evaluateTags,worstLevel,simplify,chunk,fmtDur,addSecs};
 }
 
 /* ================== App ================== */
@@ -618,7 +716,7 @@ let state = {
   vehicle:null, // {height,weight,width,length,axle}
   start:{postcode:"", lat:null, lon:null},
   drops:[], // {id, postcode, note, lat, lon, bad}
-  returnToStart:false, depart:"08:00", svc:15
+  returnToStart:false, depart:"08:00", svc:15, capacity:7
 };
 try { const s = JSON.parse(localStorage.getItem(STORE)||"null"); if (s) state = Object.assign(state, s); } catch(e){}
 function save(){ try{ localStorage.setItem(STORE, JSON.stringify(state)); }catch(e){} }
@@ -645,7 +743,7 @@ function busy(msg){ if (msg){ $("busyMsg").textContent=msg; $("busy").classList.
 function showTab(name){
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.id==="tab-"+name));
   document.querySelectorAll("nav.bottom button").forEach(b=>b.classList.toggle("on", b.dataset.tab===name));
-  if (name==="route"){ ensureMap(); setTimeout(()=>map.invalidateSize(),50); }
+  if (name==="route"){ ensureMap(); setTimeout(()=>{ map.invalidateSize(); if (lastRoute && window.L && !drawRoute._fitted){ map.fitBounds(L.latLngBounds(lastRoute.gj.features[0].geometry.coordinates.map(c=>[c[1],c[0]])).pad(0.08)); drawRoute._fitted = true; } },60); }
   window.scrollTo(0,0);
 }
 document.querySelectorAll("nav.bottom button").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
@@ -721,11 +819,13 @@ function addPostcodes(list){
     // Merge into an existing drop at the same postcode when there's a note or a role to add
     let d = (note || kind) ? state.drops.find(x=>x.postcode===pc && (!kind || !x.kind || x.kind===kind)) : null;
     if (d){
+      const before = d.note;
       d.note = mergeNote(d.note, note.split(/\s*,\s*/).filter(Boolean));
-      if (kind && !d.kind) d.kind = kind;
+      if (kind){ d.cars = (parseInt(d.cars)||0) + (countRegs(d.note) - countRegs(before)); if (!d.kind) d.kind = kind; }
       merged++;
     } else {
       d = {id:newId(), postcode:pc, note, kind, lat:null, lon:null, bad:false};
+      if (kind) d.cars = countRegs(note);
       state.drops.push(d); added++;
     }
     if (item.pair){ (pairs[item.pair] = pairs[item.pair] || {})[kind] = d; }
@@ -748,14 +848,21 @@ function renderDrops(){
   $("dropCount").textContent = state.drops.length ? `(${state.drops.length})` : "";
   if (!state.drops.length){ ul.innerHTML = `<li class="empty">No drops yet – add a postcode above.</li>`; return; }
   const early = orderProblems(state.drops);
+  const loads = loadTimeline(state.drops, state.capacity);
+  const showLoad = state.drops.some(d=>d.kind);
   ul.innerHTML = state.drops.map((d,i)=>`
-    <li class="drop" data-id="${d.id}">
+    <li class="drop${d.done?" done":""}" data-id="${d.id}">
       <span class="handle" aria-label="Drag to reorder">⠿</span>
       <span class="num">${i+1}</span>
       <div class="body">
-        <div class="pc">${d.kind?`<span class="kind ${d.kind}">${d.kind==="collect"?"Collect":"Deliver"}</span>`:""}${escapeHtml(d.postcode)}${d.bad?'<span class="bad">postcode not found</span>':""}</div>
+        <div class="pc"><button class="kind ${d.kind||"none"}" data-act="kind" data-id="${d.id}">${d.kind==="collect"?"Collect":d.kind==="deliver"?"Deliver":"Stop"}</button>${escapeHtml(d.postcode)}${d.bad?'<span class="bad">postcode not found</span>':""}</div>
         ${early.has(d.id)?'<div class="bad" style="color:var(--stop);font-size:12px;font-weight:600">⚠️ This delivery is before its collection</div>':""}
         <input class="note" data-id="${d.id}" placeholder="Customer / note" value="${escapeHtml(d.note)}">
+        <div class="ctl">
+          ${d.kind?`<span>🚗 <input class="cars" type="number" inputmode="numeric" min="0" data-id="${d.id}" value="${parseInt(d.cars)||0}"> ${d.kind==="collect"?"on":"off"}</span>`:""}
+          ${showLoad?`<span class="load${loads[i].over?" over":""}">🚚 ${loads[i].load}/${state.capacity} on board${loads[i].over?" – over!":""}</span>`:""}
+          <button class="donebtn${d.done?" on":""}" data-act="done" data-id="${d.id}">${d.done?"✓ Done "+hhmm(d.done):"✓ Done"}</button>
+        </div>
       </div>
       <div class="acts">
         <button class="mini" data-act="up" data-id="${d.id}" ${i===0?"disabled":""} aria-label="Move up">▲</button>
@@ -767,11 +874,27 @@ function renderDrops(){
 $("dropList").addEventListener("click", e=>{
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const i = state.drops.findIndex(d=>d.id===b.dataset.id); if (i<0) return;
+  if (b.dataset.act==="kind"){
+    const d = state.drops[i]; d.kind = d.kind==="" || !d.kind ? "collect" : d.kind==="collect" ? "deliver" : "";
+    if (d.kind && d.cars==null) d.cars = 1;
+    save(); renderDrops(); return;
+  }
+  if (b.dataset.act==="done"){ toggleDone(state.drops[i].id); return; }
   if (b.dataset.act==="del") state.drops.splice(i,1);
   if (b.dataset.act==="up" && i>0) [state.drops[i-1],state.drops[i]]=[state.drops[i],state.drops[i-1]];
   if (b.dataset.act==="down" && i<state.drops.length-1) [state.drops[i+1],state.drops[i]]=[state.drops[i],state.drops[i+1]];
   save(); renderDrops(); markStale();
 });
+$("dropList").addEventListener("change", e=>{
+  if (!e.target.classList.contains("cars")) return;
+  const d = state.drops.find(d=>d.id===e.target.dataset.id); if (!d) return;
+  d.cars = Math.max(0, parseInt(e.target.value)||0); save(); renderDrops();
+});
+function toggleDone(id){
+  const d = state.drops.find(d=>d.id===id); if (!d) return;
+  d.done = d.done ? null : Date.now();
+  save(); renderDrops(); if (lastRoute) drawRoute();
+}
 $("dropList").addEventListener("input", e=>{
   if (!e.target.classList.contains("note")) return;
   const d = state.drops.find(d=>d.id===e.target.dataset.id); if (d){ d.note = e.target.value; save(); }
@@ -843,7 +966,7 @@ $("ocrAdd").onclick = ()=>{
 $("addPaste").onclick = ()=>{ const l = splitPostcodes($("pasteBox").value); if(!l.length) return; addPostcodes(l); $("pasteBox").value=""; };
 $("clearBtn").onclick = ()=>{
   const b=$("clearBtn");
-  if (b.dataset.confirm){ state.drops=[]; save(); renderDrops(); markStale(); b.textContent="Clear all drops"; delete b.dataset.confirm; return; }
+  if (b.dataset.confirm){ state.drops=[]; save(); renderDrops(); markStale(); clearSavedRoute(); b.textContent="Clear all drops"; delete b.dataset.confirm; return; }
   b.dataset.confirm="1"; b.textContent="Tap again to clear all"; setTimeout(()=>{ b.textContent="Clear all drops"; delete b.dataset.confirm; },3000);
 };
 $("copyBtn").onclick = async ()=>{
@@ -862,6 +985,8 @@ $("startPc").addEventListener("change", ()=>{
 $("depart").value = state.depart; $("svc").value = state.svc; $("rtn").checked = !!state.returnToStart;
 $("depart").onchange = ()=>{ state.depart=$("depart").value; save(); };
 $("svc").onchange = ()=>{ state.svc=Math.max(0,parseInt($("svc").value)||0); save(); };
+$("cap").value = state.capacity || 7;
+$("cap").onchange = ()=>{ state.capacity = Math.max(1, parseInt($("cap").value)||7); $("cap").value = state.capacity; save(); renderDrops(); };
 $("rtn").onchange = ()=>{ state.returnToStart=$("rtn").checked; save(); markStale(); };
 
 function getPosition(){
@@ -945,10 +1070,14 @@ $("optBtn").onclick = async ()=>{
   try{
     await geocode(); badCheck();
     const startLoc = [state.start.lon, state.start.lat];
-    const body = buildOptimization(state.drops, startLoc, state.returnToStart, state.svc*60);
+    const done = state.drops.filter(d=>d.done), todo = state.drops.filter(d=>!d.done);
+    if (todo.length < 2) throw new Error("Need at least 2 stops left to suggest an order");
+    const body = buildOptimization(todo, startLoc, state.returnToStart, state.svc*60, state.capacity);
     const map = body._map; delete body._map;
     const j = await orsFetch("https://api.openrouteservice.org/optimization", body);
-    state.drops = applyOptimization(state.drops, j.routes[0].steps, map);
+    if (!j.routes || !j.routes[0]) throw new Error("Couldn't fit these stops on the wagon – check the car counts and today's max cars.");
+    state.drops = done.concat(applyOptimization(todo, j.routes[0].steps, map));
+    if (j.unassigned && j.unassigned.length){ save(); renderDrops(); markStale(); busy(); return toast(`${j.unassigned.length} stop(s) couldn't fit within ${state.capacity} cars – they're at the bottom. Check the car counts.`, 7000); }
     save(); renderDrops(); markStale();
     toast("Suggested order set – drag to change anything, then Plan route", 5000);
   }catch(e){ toast(e.message, 6000); }
@@ -958,13 +1087,16 @@ $("optBtn").onclick = async ()=>{
 $("planBtn").onclick = planRoute;
 async function planRoute(){
   if (!checkReady()) return;
-  const n = state.drops.length + 1 + (state.returnToStart?1:0);
+  const todo = state.drops.filter(d=>!d.done);
+  if (!todo.length) return toast("All drops are ticked off – nothing left to plan.");
+  const n = todo.length + 1 + (state.returnToStart?1:0);
   if (n>50) return toast("Too many stops for one route (max 48 drops). Split the round.");
+  const anyDone = todo.length < state.drops.length;
   busy("Looking up postcodes…");
   try{
     await geocode(); badCheck();
     busy("Planning a truck-safe route…");
-    const pts = [state.start, ...state.drops]; if (state.returnToStart) pts.push(state.start);
+    const pts = [state.start, ...todo]; if (state.returnToStart) pts.push(state.start);
     const body = {
       coordinates: pts.map(p=>[p.lon,p.lat]),
       radiuses: pts.map(()=>1500),
@@ -972,14 +1104,20 @@ async function planRoute(){
       options:{vehicle_type:"hgv", profile_params:{restrictions: orsRestrictions(state.vehicle)}}
     };
     const gj = await orsFetch("https://api.openrouteservice.org/v2/directions/driving-hgv/geojson", body);
-    lastRoute = {gj, pts, vehicle: Object.assign({},state.vehicle)};
+    lastRoute = {gj, start:Object.assign({},state.start), dropIds: todo.map(d=>d.id), ret: !!state.returnToStart,
+                 vehicle: Object.assign({},state.vehicle), depart: anyDone ? hhmm(Date.now()) : state.depart, restr:null};
+    saveRoute(); drawRoute._fitted = false;
     routeStale = false; $("staleBanner").style.display="none";
     busy();
     showTab("route");
     drawRoute();
+    if (anyDone) toast("Planned the drops you haven't ticked off, starting now from your start point. Tap 📍 Here first to plan from where you are.", 7000);
     checkRouteRestrictions();
   }catch(e){ busy(); toast(e.message, 7000); }
 }
+function saveRoute(){ try{ localStorage.setItem(STORE+".route", JSON.stringify(lastRoute)); }catch(e){} }
+function clearSavedRoute(){ try{ localStorage.removeItem(STORE+".route"); }catch(e){} }
+function routeDrops(){ const by = {}; state.drops.forEach(d=>by[d.id]=d); return lastRoute.dropIds.map(id=>by[id]); }
 
 /* ---------- Map ---------- */
 let map, routeLayer, stopLayer, restrLayer, areaLayer, meLayer;
@@ -997,50 +1135,76 @@ function ensureMap(){
 function pinIcon(text, cls){ return L.divIcon({className:"", html:`<div class="pin ${cls||""}">${text}</div>`, iconSize:[28,28], iconAnchor:[14,14]}); }
 function drawRoute(){
   ensureMap(); if (!lastRoute) return;
-  const {gj, pts} = lastRoute;
+  const {gj, start} = lastRoute;
   const f = gj.features[0];
+  const rd = routeDrops();
+  if (rd.some(d=>!d)) { routeStale = true; $("staleBanner").style.display="block"; }
   if (window.L){
-    routeLayer.clearLayers(); stopLayer.clearLayers(); restrLayer.clearLayers();
+    routeLayer.clearLayers(); stopLayer.clearLayers();
     const latlngs = f.geometry.coordinates.map(c=>[c[1],c[0]]);
     L.polyline(latlngs, {color:"#1b2a3a", weight:7, opacity:.35}).addTo(routeLayer);
     L.polyline(latlngs, {color:"#1565c0", weight:4}).addTo(routeLayer);
-    L.marker([pts[0].lat,pts[0].lon], {icon:pinIcon("S","start")}).bindPopup(`Start: ${escapeHtml(pts[0].postcode)}`).addTo(stopLayer);
-    state.drops.forEach((d,i)=>{
-      if (d.lat==null) return;
-      L.marker([d.lat,d.lon], {icon:pinIcon(i+1)}).bindPopup(`<b>Drop ${i+1}</b>: ${escapeHtml(d.postcode)}${d.note?"<br>"+escapeHtml(d.note):""}`).addTo(stopLayer);
+    if (start.lat!=null) L.marker([start.lat,start.lon], {icon:pinIcon("S","start")}).bindPopup(`Start: ${escapeHtml(start.postcode)}`).addTo(stopLayer);
+    rd.forEach((d,i)=>{
+      if (!d || d.lat==null) return;
+      const role = d.kind==="collect"?"Collect":d.kind==="deliver"?"Deliver":"Drop";
+      L.marker([d.lat,d.lon], {icon:pinIcon(d.done?"✓":i+1, d.done?"done":"")}).bindPopup(`<b>${role} ${i+1}</b>: ${escapeHtml(d.postcode)}${d.note?"<br>"+escapeHtml(d.note):""}${d.done?"<br>✓ Done "+hhmm(d.done):""}`).addTo(stopLayer);
     });
-    map.fitBounds(L.latLngBounds(latlngs).pad(0.08));
+    if (!drawRoute._fitted && $("tab-route").classList.contains("active")){ map.invalidateSize(); map.fitBounds(L.latLngBounds(latlngs).pad(0.08)); drawRoute._fitted = true; }
   }
 
-  // Summary
+  // Summary + times (ticked-off stops reset the clock)
   const s = f.properties.summary || {distance:0,duration:0};
   const segs = f.properties.segments || [];
-  const nDrops = state.drops.length;
-  const total = s.duration + nDrops*state.svc*60;
+  const times = legTimes(segs, rd, lastRoute.depart, state.svc*60);
   $("sMiles").textContent = (s.distance||0).toFixed(1);
   $("sDrive").textContent = fmtDur(s.duration||0);
-  $("sFinish").textContent = addSecs(state.depart, total);
-  $("summaryCard").style.display = "block"; $("noRoute").style.display = "none";
+  $("sFinish").textContent = times.finish;
+  $("summaryCard").style.display = "block"; $("exportCard").style.display = "block"; $("noRoute").style.display = "none";
 
-  // Legs
-  let t = 0, html = "";
+  const nDrops = rd.length;
+  let html = "";
   segs.forEach((seg,i)=>{
-    t += seg.duration;
     const isReturn = i >= nDrops;
-    const d = isReturn ? null : state.drops[i];
-    const arrive = addSecs(state.depart, t);
+    const d = isReturn ? null : rd[i];
+    const tm = times.legs[i];
     const role = d && d.kind ? (d.kind==="collect"?"Collect · ":"Deliver · ") : "";
-    const title = isReturn ? `Back to start (${escapeHtml(pts[0].postcode)})` : `${role}${escapeHtml(d.postcode)}${d.note?" · "+escapeHtml(d.note):""}`;
+    const title = isReturn ? `Back to start (${escapeHtml(lastRoute.start.postcode)})` : d ? `${role}${escapeHtml(d.postcode)}${d.note?" · "+escapeHtml(d.note):""}` : "(removed drop)";
     const steps = (seg.steps||[]).map(st=>`<li>${escapeHtml(st.instruction)} <span class="d">${st.distance>=0.1?st.distance.toFixed(1)+" mi":Math.round(st.distance*1760)+" yd"}</span></li>`).join("");
-    html += `<details class="leg"><summary>
-      <span class="num" style="${isReturn?"background:var(--go)":""}">${isReturn?"S":i+1}</span>
-      <span><b>${title}</b><br><span class="hint" style="margin:0">${seg.distance.toFixed(1)} mi · ${fmtDur(seg.duration)} · tap for directions</span></span>
-      <span class="eta">arrive<br><b>${arrive}</b></span></summary>
+    const right = tm.done ? `<span class="eta">done<br><b>${tm.done}</b></span>` : `<span class="eta">arrive<br><b>${tm.arrive}</b></span>`;
+    html += `<details class="leg${d&&d.done?" done":""}"><summary>
+      <span class="num" style="${isReturn?"background:var(--go)":d&&d.done?"background:#9aa3ab":""}">${isReturn?"S":d&&d.done?"✓":i+1}</span>
+      <span><b>${title}</b><br><span class="hint" style="margin:0">${seg.distance.toFixed(1)} mi · ${fmtDur(seg.duration)} · tap for directions</span>
+      ${d?`<br><button class="donebtn${d.done?" on":""}" data-done="${d.id}" style="margin:6px 0 0">${d.done?"✓ Done – tap to undo":"✓ Mark done"}</button>`:""}</span>
+      ${right}</summary>
       <ol class="steps">${steps}</ol></details>`;
-    if (!isReturn) t += state.svc*60;
   });
   $("legs").innerHTML = html; $("legsCard").style.display = "block";
 }
+$("legs").addEventListener("click", e=>{
+  const b = e.target.closest("button[data-done]"); if (!b) return;
+  e.preventDefault(); e.stopPropagation(); toggleDone(b.dataset.done);
+});
+$("gpxBtn").onclick = ()=>{
+  if (!lastRoute) return;
+  const rd = routeDrops();
+  const names = (lastRoute.gj.features[0].properties.segments||[]).map((_,i)=>{
+    const d = rd[i];
+    if (d && d.done) return null;
+    const nn = String(i+1).padStart(2,"0");
+    if (!d) return `${nn} Back to start ${lastRoute.start.postcode||""}`.trim();
+    const role = d.kind==="collect"?"Collect ":d.kind==="deliver"?"Deliver ":"";
+    return `${nn} ${role}${d.postcode}`;
+  });
+  const gpx = buildGpx(lastRoute.gj, names, 4);
+  const blob = new Blob([gpx], {type:"application/gpx+xml"});
+  const a = document.createElement("a");
+  const day = new Date(); const stamp = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,"0")}-${String(day.getDate()).padStart(2,"0")}`;
+  a.href = URL.createObjectURL(blob); a.download = `truck-route-${stamp}.gpx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  toast("Saved to Downloads – now import it at plan.tomtom.com (see steps below)", 6000);
+};
 
 /* ---------- Overpass: bridges & limits ---------- */
 const KEY_RE = '"^(maxheight|maxheight:physical|maxweight|maxweight:signed|maxwidth|maxwidth:physical|maxaxleload|maxlength)$"';
@@ -1069,30 +1233,32 @@ function describeEl(tags){
   if (tags.barrier) bits.push(tags.barrier.replace(/_/g," "));
   return bits.join(" · ");
 }
+function restrMarker(f, layer){
+  if (!window.L) return null;
+  const main = f.findings.find(x=>x.level===f.level) || f.findings[0];
+  const short = main.kind==="height"||main.kind==="width" ? (main.limit?mToFtIn(main.limit):"?") : (main.limit?(+main.limit.toFixed(1))+"t":"?");
+  const icon = L.divIcon({className:"", html:`<div class="rpin ${f.level}">${main.kind==="height"?"↕":main.kind==="width"?"↔":"⚖"} ${short}</div>`, iconSize:null, iconAnchor:[20,10]});
+  const verdict = f.level==="block" ? "<b style='color:#c62828'>Your vehicle is over this limit</b>" : f.level==="tight" ? "<b style='color:#d98200'>Tight / unclear – check</b>" : "Your vehicle is within this limit";
+  return L.marker(f.pos, {icon, zIndexOffset: f.level==="block"?1000:f.level==="tight"?500:0})
+    .bindPopup(`${f.findings.map(x=>escapeHtml(x.label)).join("<br>")}<br>${escapeHtml(f.where)}<br>${verdict}<br><a href="https://www.openstreetmap.org/${f.osm}" target="_blank" rel="noopener">View on OpenStreetMap</a>`)
+    .addTo(layer);
+}
 function addRestrictionMarkers(elements, layer, veh, seen){
   const found = [];
   for (const el of elements){
     const id = el.type+el.id; if (seen.has(id)) continue; seen.add(id);
     const pos = elemPos(el); if (!pos || !el.tags) continue;
     const fs = evaluateTags(el.tags, veh); if (!fs.length) continue;
-    const level = worstLevel(fs);
-    const main = fs.find(f=>f.level===level) || fs[0];
-    const short = main.kind==="height"||main.kind==="width" ? (main.limit?mToFtIn(main.limit):"?") : (main.limit?(+main.limit.toFixed(1))+"t":"?");
-    let m = null;
-    if (window.L){
-    const icon = L.divIcon({className:"", html:`<div class="rpin ${level}">${main.kind==="height"?"↕":main.kind==="width"?"↔":"⚖"} ${short}</div>`, iconSize:null, iconAnchor:[20,10]});
-    const verdict = level==="block" ? "<b style='color:#c62828'>Your vehicle is over this limit</b>" : level==="tight" ? "<b style='color:#d98200'>Tight / unclear – check</b>" : "Your vehicle is within this limit";
-    m = L.marker(pos, {icon, zIndexOffset: level==="block"?1000:level==="tight"?500:0})
-      .bindPopup(`${fs.map(f=>escapeHtml(f.label)).join("<br>")}<br>${escapeHtml(describeEl(el.tags))}<br>${verdict}<br><a href="https://www.openstreetmap.org/${el.type}/${el.id}" target="_blank" rel="noopener">View on OpenStreetMap</a>`);
-    m.addTo(layer);
-    }
-    found.push({pos, level, findings:fs, where:describeEl(el.tags), marker:m});
+    const f = {pos, level: worstLevel(fs), findings:fs, where:describeEl(el.tags), osm:`${el.type}/${el.id}`};
+    f.marker = restrMarker(f, layer);
+    found.push(f);
   }
   return found;
 }
 async function checkRouteRestrictions(){
   if (!lastRoute) return;
   const veh = lastRoute.vehicle;
+  if (window.L) restrLayer.clearLayers();
   $("restrCard").style.display="block"; $("restrList").innerHTML="";
   $("restrStatus").textContent = "Checking OpenStreetMap for bridges and limits along the route…";
   const coords = lastRoute.gj.features[0].geometry.coordinates;
@@ -1109,6 +1275,8 @@ async function checkRouteRestrictions(){
     }catch(e){ failed++; }
   }
   renderRestrictions(found, failed, parts.length);
+  lastRoute.restr = {found: found.map(({marker, ...rest})=>rest), failed, total: parts.length};
+  saveRoute();
 }
 function renderRestrictions(found, failed, total){
   const order = {block:0,tight:1,ok:2};
@@ -1173,6 +1341,21 @@ $("testNet").onclick = async ()=>{
 };
 
 /* ---------- Init ---------- */
+try {
+  const r = JSON.parse(localStorage.getItem(STORE+".route")||"null");
+  if (r && r.gj && r.dropIds){
+    lastRoute = r;
+    setTimeout(()=>{
+      if ($("tab-route").classList.contains("active")) setTimeout(()=>map.invalidateSize(),50);
+      drawRoute();
+      if (r.restr){
+        $("restrCard").style.display="block";
+        const found = r.restr.found.map(f=>Object.assign(f, {marker: restrMarker(f, restrLayer)}));
+        renderRestrictions(found, r.restr.failed, r.restr.total);
+      }
+    }, 0);
+  }
+} catch(e){}
 if (IN_PREVIEW) $("previewBanner").style.display = "block";
 setHUnit(state.hUnit||"ft");
 if (state.vehicle) fillVehicleForm(state.vehicle);
