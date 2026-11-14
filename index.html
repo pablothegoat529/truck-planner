@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1b2a3a">
 <title>Truck Drop Planner</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
@@ -99,10 +102,9 @@
   .rpin{border:2px solid #fff;border-radius:6px;padding:1px 4px;font-size:11px;font-weight:800;color:#fff;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
   .rpin.block{background:var(--stop)}.rpin.tight{background:var(--warn)}.rpin.ok{background:var(--go);opacity:.75}
   .drop.done{opacity:.55}
+  .regs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .regchip{font-size:12px;font-weight:700;letter-spacing:.4px;text-decoration:none;color:#1b2a3a;background:#fff4d6;border:1px solid #f0d27a;border-radius:8px;padding:3px 7px}
   .ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:13px;color:var(--muted)}
-  .ctl input.cars{width:46px;padding:4px 6px;font-size:14px;text-align:center}
-  .load{font-weight:700;color:var(--ink)}
-  .load.over{color:var(--stop)}
   .donebtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 8px;font:inherit;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;margin-left:auto}
   .donebtn.on{background:var(--go);border-color:var(--go);color:#fff}
   button.kind{border:0;cursor:pointer;font-family:inherit}
@@ -129,6 +131,10 @@
 </header>
 
 <main>
+  <div class="banner info" id="installBanner" style="display:none">
+    <b>Install the planner as an app</b> – its own icon, full screen, and it opens with poor signal.
+    <div class="row" style="margin-top:8px"><button class="btn primary small" id="installBtn">📲 Install app</button><button class="btn small" id="installLater">Not now</button></div>
+  </div>
   <div class="banner bad" id="previewBanner" style="display:none">
     <b>This is open as a file or a preview, which often stops it going online.</b> If postcodes, routes or bridges won’t load, that’s why.
     Open the planner from its web link in Chrome instead.
@@ -190,11 +196,7 @@
         <div><label for="depart">Leave at</label><input id="depart" type="time" value="08:00"></div>
         <div><label for="svc">Mins per drop</label><input id="svc" type="number" inputmode="numeric" min="0" value="15"></div>
       </div>
-      <div class="row">
-        <div><label for="cap">Max cars on wagon today</label><input id="cap" type="number" inputmode="numeric" min="1" max="12" value="7"></div>
-        <div></div>
-      </div>
-      <p class="hint" style="margin-top:4px">Lower it on days with bigger cars. Collect/Deliver stops count cars on and off.</p>
+
       <label style="display:flex;align-items:center;gap:8px;color:var(--ink);font-size:15px;margin-top:12px">
         <input type="checkbox" id="rtn" style="width:auto"> Return to start at the end
       </label>
@@ -215,7 +217,7 @@
       <input type="file" id="shotInput" accept="image/*" multiple style="display:none">
       <p class="hint">Screenshot your job list in any app, then pick the screenshots here. It reads the postcodes and vehicle registrations for you, and puts the regs in each drop's note.</p>
       <ul id="dropList"></ul>
-      <p class="hint">Drag <b>⠿</b> or use the arrows to put drops in the order you want to do them. Tap the grey/blue/green label to switch a stop between <b>Stop</b>, <b>Collect</b> and <b>Deliver</b>. Tap <b>✓ Done</b> as you finish each one.</p>
+      <p class="hint">Drag <b>⠿</b> or use the arrows to put drops in the order you want to do them. Tap the grey/blue/green label to switch a stop between <b>Stop</b>, <b>Collect</b> and <b>Deliver</b>. Tap <b>✓ Done</b> as you finish each one. Tap a yellow <b>🔎 reg</b> to copy it and open Total Car Check's free size check – then paste it into their search box.</p>
     </div>
 
     <div class="card">
@@ -580,12 +582,11 @@ function buildOptimization(drops, startLoc, ret, service, cap){
   const byId = {}; drops.forEach((d,i)=>byId[d.id]=i);
   const jobs = [], shipments = [], map = {job:{}, pickup:{}, delivery:{}};
   const inShipment = new Set();
-  const cars = d => Math.max(0, parseInt(d.cars)||0);
   let n = 0;
   drops.forEach((d,i)=>{
     if (d.kind==="collect" && d.deliverTo && byId[d.deliverTo]!=null){
       const t = drops[byId[d.deliverTo]]; n++;
-      shipments.push({amount:[cars(d)], pickup:{id:n, location:[d.lon,d.lat], service}, delivery:{id:n, location:[t.lon,t.lat], service}});
+      shipments.push({pickup:{id:n, location:[d.lon,d.lat], service}, delivery:{id:n, location:[t.lon,t.lat], service}});
       map.pickup[n] = i; map.delivery[n] = byId[d.deliverTo];
       inShipment.add(i); inShipment.add(byId[d.deliverTo]);
     }
@@ -593,11 +594,9 @@ function buildOptimization(drops, startLoc, ret, service, cap){
   drops.forEach((d,i)=>{
     if (inShipment.has(i)) return;
     const job = {id:i+1, location:[d.lon,d.lat], service};
-    if (d.kind==="collect") job.pickup = [cars(d)];
-    if (d.kind==="deliver") job.delivery = [cars(d)]; // already on the wagon at the start
     jobs.push(job); map.job[i+1] = i;
   });
-  const vehicle = Object.assign({id:1, profile:"driving-hgv", start:startLoc, capacity:[cap||7]}, ret?{end:startLoc}:{});
+  const vehicle = Object.assign({id:1, profile:"driving-hgv", start:startLoc}, ret?{end:startLoc}:{});
   const body = {vehicles:[vehicle]};
   if (jobs.length) body.jobs = jobs;
   if (shipments.length) body.shipments = shipments;
@@ -650,16 +649,6 @@ function deliveriesAfterCollections(drops){
   }
   return out;
 }
-/* Cars on the wagon after each stop. Collect adds its cars, Deliver takes them off. */
-function loadTimeline(drops, cap){
-  let load = 0;
-  return drops.map(d=>{
-    const n = Math.max(0, parseInt(d.cars)||0);
-    if (d.kind==="collect") load += n;
-    else if (d.kind==="deliver") load = Math.max(0, load - n);
-    return {load, over: load > cap};
-  });
-}
 function countRegs(note){ return String(note||"").split(/\s*,\s*/).filter(Boolean).length; }
 function hhmm(ms){ const t = new Date(ms); return String(t.getHours()).padStart(2,"0")+":"+String(t.getMinutes()).padStart(2,"0"); }
 function toSecs(hm){ const [h,m] = String(hm||"08:00").split(":").map(Number); return (h||0)*3600 + (m||0)*60; }
@@ -695,7 +684,7 @@ function escapeHtml(s){
   return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 if (typeof module !== "undefined") {
-  module.exports = {loadTimeline,countRegs,legTimes,buildGpx,toSecs,secsToHm,deliveriesAfterCollections,buildOptimization,applyOptimization,extractRegs,parseJobs,mergeNote,extractPostcodes,normPostcode,isPostcode,splitPostcodes,parseLength,parseWeight,mToFtIn,evaluateTags,worstLevel,simplify,chunk,fmtDur,addSecs};
+  module.exports = {countRegs,legTimes,buildGpx,toSecs,secsToHm,deliveriesAfterCollections,buildOptimization,applyOptimization,extractRegs,parseJobs,mergeNote,extractPostcodes,normPostcode,isPostcode,splitPostcodes,parseLength,parseWeight,mToFtIn,evaluateTags,worstLevel,simplify,chunk,fmtDur,addSecs};
 }
 
 /* ================== App ================== */
@@ -848,8 +837,6 @@ function renderDrops(){
   $("dropCount").textContent = state.drops.length ? `(${state.drops.length})` : "";
   if (!state.drops.length){ ul.innerHTML = `<li class="empty">No drops yet – add a postcode above.</li>`; return; }
   const early = orderProblems(state.drops);
-  const loads = loadTimeline(state.drops, state.capacity);
-  const showLoad = state.drops.some(d=>d.kind);
   ul.innerHTML = state.drops.map((d,i)=>`
     <li class="drop${d.done?" done":""}" data-id="${d.id}">
       <span class="handle" aria-label="Drag to reorder">⠿</span>
@@ -858,9 +845,8 @@ function renderDrops(){
         <div class="pc"><button class="kind ${d.kind||"none"}" data-act="kind" data-id="${d.id}">${d.kind==="collect"?"Collect":d.kind==="deliver"?"Deliver":"Stop"}</button>${escapeHtml(d.postcode)}${d.bad?'<span class="bad">postcode not found</span>':""}</div>
         ${early.has(d.id)?'<div class="bad" style="color:var(--stop);font-size:12px;font-weight:600">⚠️ This delivery is before its collection</div>':""}
         <input class="note" data-id="${d.id}" placeholder="Customer / note" value="${escapeHtml(d.note)}">
+        ${d.kind==="deliver"?"":regChips(d.note)}
         <div class="ctl">
-          ${d.kind?`<span>🚗 <input class="cars" type="number" inputmode="numeric" min="0" data-id="${d.id}" value="${parseInt(d.cars)||0}"> ${d.kind==="collect"?"on":"off"}</span>`:""}
-          ${showLoad?`<span class="load${loads[i].over?" over":""}">🚚 ${loads[i].load}/${state.capacity} on board${loads[i].over?" – over!":""}</span>`:""}
           <button class="donebtn${d.done?" on":""}" data-act="done" data-id="${d.id}">${d.done?"✓ Done "+hhmm(d.done):"✓ Done"}</button>
         </div>
       </div>
@@ -876,7 +862,6 @@ $("dropList").addEventListener("click", e=>{
   const i = state.drops.findIndex(d=>d.id===b.dataset.id); if (i<0) return;
   if (b.dataset.act==="kind"){
     const d = state.drops[i]; d.kind = d.kind==="" || !d.kind ? "collect" : d.kind==="collect" ? "deliver" : "";
-    if (d.kind && d.cars==null) d.cars = 1;
     save(); renderDrops(); return;
   }
   if (b.dataset.act==="done"){ toggleDone(state.drops[i].id); return; }
@@ -885,10 +870,17 @@ $("dropList").addEventListener("click", e=>{
   if (b.dataset.act==="down" && i<state.drops.length-1) [state.drops[i+1],state.drops[i]]=[state.drops[i],state.drops[i+1]];
   save(); renderDrops(); markStale();
 });
-$("dropList").addEventListener("change", e=>{
-  if (!e.target.classList.contains("cars")) return;
-  const d = state.drops.find(d=>d.id===e.target.dataset.id); if (!d) return;
-  d.cars = Math.max(0, parseInt(e.target.value)||0); save(); renderDrops();
+const SIZE_CHECK_URL = "https://totalcarcheck.co.uk/Free-Car-Specs-Check";
+function regChips(note){
+  const regs = extractRegs(note);
+  if (!regs.length) return "";
+  return `<div class="regs">${regs.map(r=>`<a class="regchip" href="${SIZE_CHECK_URL}" target="_blank" rel="noopener" data-reg="${escapeHtml(r)}">🔎 ${escapeHtml(r)}</a>`).join("")}</div>`;
+}
+$("dropList").addEventListener("click", e=>{
+  const a = e.target.closest("a.regchip"); if (!a) return;
+  const reg = a.dataset.reg.replace(/\s/g,"");
+  try { navigator.clipboard.writeText(reg).catch(()=>{}); } catch(err){}
+  toast(`${a.dataset.reg} copied – paste it into Total Car Check's search box`, 5000);
 });
 function toggleDone(id){
   const d = state.drops.find(d=>d.id===id); if (!d) return;
@@ -985,8 +977,6 @@ $("startPc").addEventListener("change", ()=>{
 $("depart").value = state.depart; $("svc").value = state.svc; $("rtn").checked = !!state.returnToStart;
 $("depart").onchange = ()=>{ state.depart=$("depart").value; save(); };
 $("svc").onchange = ()=>{ state.svc=Math.max(0,parseInt($("svc").value)||0); save(); };
-$("cap").value = state.capacity || 7;
-$("cap").onchange = ()=>{ state.capacity = Math.max(1, parseInt($("cap").value)||7); $("cap").value = state.capacity; save(); renderDrops(); };
 $("rtn").onchange = ()=>{ state.returnToStart=$("rtn").checked; save(); markStale(); };
 
 function getPosition(){
@@ -1072,12 +1062,12 @@ $("optBtn").onclick = async ()=>{
     const startLoc = [state.start.lon, state.start.lat];
     const done = state.drops.filter(d=>d.done), todo = state.drops.filter(d=>!d.done);
     if (todo.length < 2) throw new Error("Need at least 2 stops left to suggest an order");
-    const body = buildOptimization(todo, startLoc, state.returnToStart, state.svc*60, state.capacity);
+    const body = buildOptimization(todo, startLoc, state.returnToStart, state.svc*60);
     const map = body._map; delete body._map;
     const j = await orsFetch("https://api.openrouteservice.org/optimization", body);
-    if (!j.routes || !j.routes[0]) throw new Error("Couldn't fit these stops on the wagon – check the car counts and today's max cars.");
+    if (!j.routes || !j.routes[0]) throw new Error("Couldn't work out an order for these stops – check the postcodes and try again.");
     state.drops = done.concat(applyOptimization(todo, j.routes[0].steps, map));
-    if (j.unassigned && j.unassigned.length){ save(); renderDrops(); markStale(); busy(); return toast(`${j.unassigned.length} stop(s) couldn't fit within ${state.capacity} cars – they're at the bottom. Check the car counts.`, 7000); }
+    if (j.unassigned && j.unassigned.length){ save(); renderDrops(); markStale(); busy(); return toast(`${j.unassigned.length} stop(s) couldn't be placed – they're at the bottom. Check their postcodes.`, 7000); }
     save(); renderDrops(); markStale();
     toast("Suggested order set – drag to change anything, then Plan route", 5000);
   }catch(e){ toast(e.message, 6000); }
@@ -1339,6 +1329,27 @@ $("testNet").onclick = async ()=>{
   });
   await t("Bridge data (Overpass)", async()=>{ const r = await fetch(OVERPASS[0]+"?data="+encodeURIComponent("[out:json];node(1);out;")); return r.ok?"✅":"⚠️ ("+r.status+")"; });
 };
+
+/* ---------- App install + offline ---------- */
+let installPrompt = null;
+const isInstalled = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+window.addEventListener("beforeinstallprompt", e=>{
+  e.preventDefault(); installPrompt = e;
+  let snoozed = false; try{ snoozed = localStorage.getItem(STORE+".installLater") === new Date().toDateString(); }catch(err){}
+  if (!isInstalled() && !snoozed) $("installBanner").style.display = "block";
+});
+$("installBtn").onclick = async ()=>{
+  if (!installPrompt) return toast("Use Chrome's ⋮ menu → Install app");
+  installPrompt.prompt();
+  const choice = await installPrompt.userChoice.catch(()=>null);
+  installPrompt = null; $("installBanner").style.display = "none";
+  if (choice && choice.outcome === "accepted") toast("Installed – open Truck Drop Planner from your home screen");
+};
+$("installLater").onclick = ()=>{ $("installBanner").style.display = "none"; try{ localStorage.setItem(STORE+".installLater", new Date().toDateString()); }catch(err){} };
+window.addEventListener("appinstalled", ()=>{ $("installBanner").style.display = "none"; });
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener("load", ()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); });
+}
 
 /* ---------- Init ---------- */
 try {
